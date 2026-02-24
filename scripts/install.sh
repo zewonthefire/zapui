@@ -1,80 +1,138 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_INSTALL_DIR="$HOME/zapui"
+DEFAULT_INSTALL_DIR="${HOME}/zapui"
 DEFAULT_REPO_URL="https://github.com/zewonthefire/zapui"
 DEFAULT_HTTP_PORT="8090"
 DEFAULT_HTTPS_PORT="443"
 
-read -r -p "Install directory [${DEFAULT_INSTALL_DIR}]: " INSTALL_DIR
-INSTALL_DIR="${INSTALL_DIR:-$DEFAULT_INSTALL_DIR}"
+color() { printf "\033[%sm%s\033[0m\n" "$1" "$2"; }
+status() { color "1;34" "[INFO] $*"; }
+ok() { color "1;32" "[OK]   $*"; }
+warn() { color "1;33" "[WARN] $*"; }
 
-read -r -p "Git repository URL [${DEFAULT_REPO_URL}]: " REPO_URL
-REPO_URL="${REPO_URL:-$DEFAULT_REPO_URL}"
+prompt_default() {
+  local prompt="$1"; local default="$2"; local value
+  read -r -p "${prompt} [${default}]: " value
+  printf "%s" "${value:-$default}"
+}
 
-read -r -p "Public HTTP port [${DEFAULT_HTTP_PORT}]: " PUBLIC_HTTP_PORT
-PUBLIC_HTTP_PORT="${PUBLIC_HTTP_PORT:-$DEFAULT_HTTP_PORT}"
+prompt_yes_no() {
+  local prompt="$1"; local default="$2"; local value
+  read -r -p "${prompt} (${default}): " value
+  value="${value:-$default}"
+  case "${value,,}" in
+    y|yes) printf "yes" ;;
+    *) printf "no" ;;
+  esac
+}
 
-read -r -p "Public HTTPS port [${DEFAULT_HTTPS_PORT}]: " PUBLIC_HTTPS_PORT
-PUBLIC_HTTPS_PORT="${PUBLIC_HTTPS_PORT:-$DEFAULT_HTTPS_PORT}"
+command -v git >/dev/null || { echo "git is required" >&2; exit 1; }
+command -v docker >/dev/null || { echo "docker is required" >&2; exit 1; }
 
-echo "Enabling the Ops Agent may expose additional control-plane capabilities and should only be used in trusted environments."
-read -r -p "Enable Ops Agent? (yes/NO): " ENABLE_OPS_AGENT_INPUT
-ENABLE_OPS_AGENT_INPUT="${ENABLE_OPS_AGENT_INPUT:-no}"
-ENABLE_OPS_AGENT="no"
-COMPOSE_PROFILES=""
-if [[ "${ENABLE_OPS_AGENT_INPUT,,}" == "yes" || "${ENABLE_OPS_AGENT_INPUT,,}" == "y" ]]; then
-  ENABLE_OPS_AGENT="yes"
-  COMPOSE_PROFILES="ops"
-fi
+auto_env_value() {
+  local env_file="$1"; local key="$2"; local fallback="$3"
+  if [[ -f "$env_file" ]]; then
+    local existing
+    existing="$(awk -F= -v k="$key" '$1==k {print substr($0, index($0, "=")+1)}' "$env_file" | tail -n1)"
+    if [[ -n "$existing" ]]; then
+      printf "%s" "$existing"
+      return
+    fi
+  fi
+  printf "%s" "$fallback"
+}
 
-mkdir -p "${INSTALL_DIR}"
+upsert_env() {
+  local env_file="$1"; local key="$2"; local value="$3"
+  if grep -qE "^${key}=" "$env_file"; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$env_file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$env_file"
+  fi
+}
+
+status "ZapUI installer (idempotent). Safe to run multiple times."
+
+INSTALL_DIR="$(prompt_default "Install directory" "$DEFAULT_INSTALL_DIR")"
+REPO_URL="$(prompt_default "Git repository URL" "$DEFAULT_REPO_URL")"
+mkdir -p "$INSTALL_DIR"
 
 if [[ ! -d "${INSTALL_DIR}/.git" ]]; then
-  echo "Cloning ${REPO_URL} into ${INSTALL_DIR}"
-  git clone "${REPO_URL}" "${INSTALL_DIR}"
+  status "Cloning repository into ${INSTALL_DIR}"
+  git clone "$REPO_URL" "$INSTALL_DIR"
+  ok "Repository cloned"
 else
-  echo "Repository exists at ${INSTALL_DIR}; pulling latest changes"
-  git -C "${INSTALL_DIR}" pull --ff-only
+  status "Repository already exists at ${INSTALL_DIR}"
+  CURRENT_REMOTE="$(git -C "$INSTALL_DIR" remote get-url origin 2>/dev/null || true)"
+  if [[ -n "$CURRENT_REMOTE" && "$CURRENT_REMOTE" != "$REPO_URL" ]]; then
+    warn "Requested repo differs from current origin: ${CURRENT_REMOTE}"
+  fi
+  PULL_LATEST="$(prompt_yes_no "Pull latest code now?" "yes")"
+  if [[ "$PULL_LATEST" == "yes" ]]; then
+    git -C "$INSTALL_DIR" pull --ff-only
+    ok "Repository updated"
+  else
+    warn "Skipping git pull; using existing checkout"
+  fi
 fi
 
-cd "${INSTALL_DIR}"
-
+cd "$INSTALL_DIR"
 mkdir -p certs nginx/state nginx/conf.d
 
 if [[ ! -f .env ]]; then
   cp .env.example .env
+  ok "Created .env from .env.example"
+else
+  ok "Using existing .env"
 fi
 
-upsert_env() {
-  local key="$1"
-  local value="$2"
-  if grep -qE "^${key}=" .env; then
-    sed -i "s|^${key}=.*|${key}=${value}|" .env
-  else
-    printf '%s=%s\n' "${key}" "${value}" >> .env
-  fi
-}
+HTTP_DEFAULT="$(auto_env_value .env PUBLIC_HTTP_PORT "$DEFAULT_HTTP_PORT")"
+HTTPS_DEFAULT="$(auto_env_value .env PUBLIC_HTTPS_PORT "$DEFAULT_HTTPS_PORT")"
+OPS_DEFAULT="$(auto_env_value .env ENABLE_OPS_AGENT "false")"
 
-upsert_env PUBLIC_HTTP_PORT "${PUBLIC_HTTP_PORT}"
-upsert_env PUBLIC_HTTPS_PORT "${PUBLIC_HTTPS_PORT}"
-upsert_env ENABLE_OPS_AGENT "${ENABLE_OPS_AGENT}"
-upsert_env COMPOSE_PROFILES "${COMPOSE_PROFILES}"
+PUBLIC_HTTP_PORT="$(prompt_default "Public HTTP port" "$HTTP_DEFAULT")"
+PUBLIC_HTTPS_PORT="$(prompt_default "Public HTTPS port" "$HTTPS_DEFAULT")"
 
-echo "Building images..."
-docker compose build
+if [[ "${OPS_DEFAULT,,}" == "true" || "${OPS_DEFAULT,,}" == "1" || "${OPS_DEFAULT,,}" == "yes" ]]; then
+  OPS_QUESTION_DEFAULT="yes"
+else
+  OPS_QUESTION_DEFAULT="no"
+fi
 
-echo "Starting services..."
-docker compose up -d
+warn "Ops Agent uses Docker socket and should only be enabled in trusted environments."
+ENABLE_OPS_INPUT="$(prompt_yes_no "Enable Ops Agent" "$OPS_QUESTION_DEFAULT")"
+ENABLE_OPS_AGENT="false"
+COMPOSE_PROFILES=""
+if [[ "$ENABLE_OPS_INPUT" == "yes" ]]; then
+  ENABLE_OPS_AGENT="true"
+  COMPOSE_PROFILES="ops"
+fi
+
+upsert_env .env PUBLIC_HTTP_PORT "$PUBLIC_HTTP_PORT"
+upsert_env .env PUBLIC_HTTPS_PORT "$PUBLIC_HTTPS_PORT"
+upsert_env .env ENABLE_OPS_AGENT "$ENABLE_OPS_AGENT"
+upsert_env .env COMPOSE_PROFILES "$COMPOSE_PROFILES"
+ok "Updated .env values"
+
+BUILD_ACTION="$(prompt_yes_no "Build/rebuild images" "yes")"
+if [[ "$BUILD_ACTION" == "yes" ]]; then
+  status "Building images"
+  docker compose build --pull
+  ok "Image build completed"
+else
+  warn "Skipping image build"
+fi
+
+status "Applying compose changes (ports/profiles/env)"
+docker compose up -d --remove-orphans
+ok "Services are running"
+
+status "Current service status"
+docker compose ps
 
 echo
-echo "Installation complete."
-echo "HTTP setup URL:  http://localhost:${PUBLIC_HTTP_PORT}/setup"
-echo "Health endpoint:  http://localhost:${PUBLIC_HTTP_PORT}/health"
-echo "HTTPS endpoint:   https://localhost:${PUBLIC_HTTPS_PORT}/"
-echo
-echo "Next steps:"
-echo "1) Open /setup to complete the wizard when implemented."
-echo "2) Replace temporary certs in ./certs/fullchain.pem and ./certs/privkey.pem."
-echo "3) Create nginx/state/setup_complete to enforce HTTP->HTTPS redirect after setup."
-echo "4) Inspect logs with: docker compose logs -f nginx web"
+ok "Installation/update complete"
+echo "Setup URL:       http://localhost:${PUBLIC_HTTP_PORT}/setup"
+echo "Health endpoint: http://localhost:${PUBLIC_HTTP_PORT}/health"
+echo "HTTPS endpoint:  https://localhost:${PUBLIC_HTTPS_PORT}/"
