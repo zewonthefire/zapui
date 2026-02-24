@@ -138,6 +138,9 @@ status "Applying compose changes (ports/profiles/env)"
 docker compose up -d --remove-orphans
 ok "Services are running"
 
+docker compose -f ${INSTALL_DIR}/docker-compose.yml down
+docker compose -f ${INSTALL_DIR}/docker-compose.yml up -d
+
 status "Current service status"
 docker compose ps
 
