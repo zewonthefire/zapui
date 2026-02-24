@@ -10,12 +10,12 @@
 ## Reporting flow
 ```mermaid
 flowchart LR
-  A[Completed ScanJob] --> B[generate_scan_report]
-  B --> C[Serialize normalized findings]
-  C --> D[Write HTML + JSON artifacts]
-  D --> E[POST /render to PDF service]
-  E --> F[Store PDF file]
-  F --> G[/scans/<id>/report/{html|json|pdf}]
+  A["Completed ScanJob"] --> B["generate_scan_report"]
+  B --> C["Serialize normalized findings"]
+  C --> D["Write HTML + JSON artifacts"]
+  D --> E["POST /render to PDF service"]
+  E --> F["Store PDF file"]
+  F --> G["/scans/<id>/report/:format (html|json|pdf)"]
 ```
 
 ## Checks
