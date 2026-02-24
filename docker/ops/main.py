@@ -62,20 +62,35 @@ def _upsert_env_var(env_file: Path, key: str, value: str) -> None:
     env_file.write_text("\n".join(filtered) + "\n")
 
 
+def _resolve_compose_file() -> Path:
+    candidates = [
+        PROJECT_DIR / "docker-compose.yml",
+        PROJECT_DIR / "docker-compose.yaml",
+        PROJECT_DIR / "compose.yml",
+        PROJECT_DIR / "compose.yaml",
+        PROJECT_DIR / "zapui" / "docker-compose.yml",
+        PROJECT_DIR / "zapui" / "docker-compose.yaml",
+    ]
+    for candidate in candidates:
+        if candidate.exists():
+            return candidate
+    raise HTTPException(status_code=500, detail="compose file not found")
+
+
 def _upsert_compose_zap_api_key(compose_file: Path, _api_key: str) -> None:
     if not compose_file.exists():
-        raise HTTPException(status_code=500, detail="docker-compose.yml not found")
+        raise HTTPException(status_code=500, detail=f"compose file not found: {compose_file}")
 
     lines = compose_file.read_text().splitlines()
-    prefix = "      ZAP_API_KEY:"
-    desired = "      ZAP_API_KEY: ${ZAP_API_KEY:-change-me-zap-key}"
+    desired = "ZAP_API_KEY: ${ZAP_API_KEY:-change-me-zap-key}"
     for idx, line in enumerate(lines):
-        if line.startswith(prefix):
-            lines[idx] = desired
+        if line.strip().startswith("ZAP_API_KEY:"):
+            indent = line[: len(line) - len(line.lstrip())]
+            lines[idx] = f"{indent}{desired}"
             compose_file.write_text("\n".join(lines) + "\n")
             return
 
-    raise HTTPException(status_code=500, detail="ZAP_API_KEY line not found in docker-compose.yml")
+    raise HTTPException(status_code=500, detail="ZAP_API_KEY line not found in compose file")
 
 
 def _allowed_services() -> set[str]:
@@ -220,7 +235,7 @@ def compose_upsert_zap_api_key(payload: ZapApiKeyPayload) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="api_key must be a single line")
 
     env_file = PROJECT_DIR / ".env"
-    compose_file = PROJECT_DIR / "docker-compose.yml"
+    compose_file = _resolve_compose_file()
     _upsert_env_var(env_file, "ZAP_API_KEY", api_key)
     _upsert_compose_zap_api_key(compose_file, api_key)
 
