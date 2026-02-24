@@ -1,46 +1,156 @@
 # Architecture
 
-## High-level design
-ZapUI is a Dockerized security orchestration platform for OWASP ZAP. It combines:
-- Django web app (UI + APIs)
-- Celery worker/beat (asynchronous scan execution)
-- PostgreSQL (state + historical analytics)
-- Redis (queueing)
-- Nginx (TLS termination + setup gating)
-- OWASP ZAP daemon(s) as internal and/or external scan nodes
-- Optional Ops Agent (privileged operational actions)
+This document describes ZapUI's technical architecture, service boundaries, and core runtime flows.
 
-## Core concepts and relationships
-- **Project**: top-level application/business scope.
-- **Target/Asset**: concrete URL/service in a project.
-- **Zap Node**: scan execution engine endpoint (`internal_managed` or `external`).
-- **Scan Profile**: reusable scan policy template.
-- **Scan Job**: one execution of profile+target.
-- **Finding**: normalized vulnerability (stable identity over time).
-- **Risk Snapshot**: weighted score at target/project/global levels.
-- **Evolution**: scan-to-scan comparison (`new`, `resolved`, `risk_delta`).
+---
 
-## Runtime flow
-1. User creates project, target, and profile.
-2. User submits scan job.
-3. Celery task selects a node and drives spider/ascan lifecycle via ZAP API.
-4. Raw alerts are persisted.
-5. Alerts are normalized into findings/instances.
-6. Risk snapshots are computed.
-7. Evolution diff is generated against previous completed scan.
-8. Reports are generated (HTML/JSON/PDF).
+## 1) Design goals
 
-## Deployment topology
-- Host ports map into nginx (`PUBLIC_HTTP_PORT` -> 8080, `PUBLIC_HTTPS_PORT` -> 8443).
-- Nginx forwards to Django (`web:8000`) and serves static/media volumes.
-- Internal ZAP is only on compose network by default.
-- Optional external nodes can be registered and health-checked.
+ZapUI is designed to provide:
 
-## Setup wizard gating
-Until setup is complete, middleware redirects non-exempt routes to `/setup`.
-Nginx also uses `nginx/state/setup_complete` to decide whether HTTP should redirect to HTTPS.
+- a deployable single-stack security control plane,
+- clear separation of ingress/app/async/data concerns,
+- support for both internal and external scan execution nodes,
+- historical analysis beyond single scan payloads,
+- optional privileged operations mode with explicit risk boundaries.
 
-## Operational model
-- Default mode: safe baseline, no privileged compose control.
-- Ops mode: enable `ops` profile + token, allowing UI-driven restart/rebuild/redeploy/scale workflows.
-- Internal ZAP scaling uses compose service scaling and syncs `ZapNode` records.
+---
+
+## 2) System components
+
+### Ingress
+
+- `nginx`
+  - terminates TLS,
+  - proxies requests to `web`,
+  - switches routing behavior based on setup completion flag.
+
+### Application
+
+- `web` (Django + Gunicorn)
+  - serves UI and endpoints,
+  - executes setup flow,
+  - stores and queries domain data,
+  - triggers async scan jobs.
+
+### Async workers
+
+- `worker` (Celery)
+  - orchestrates scan lifecycle and post-processing.
+- `beat` (Celery beat)
+  - reserved for scheduled workflows.
+
+### Data services
+
+- `db` (PostgreSQL): primary persistence.
+- `redis`: queue broker/result backend.
+
+### Security scanners
+
+- `zap` service for internal managed node(s),
+- external ZAP nodes can be added via UI and tested.
+
+### Reporting
+
+- `pdf` internal microservice renders HTML reports to PDF.
+
+### Optional operations plane
+
+- `ops` service (profile-gated) provides controlled compose actions.
+
+---
+
+## 3) Network and port model
+
+Host ports map to nginx:
+
+- `PUBLIC_HTTP_PORT` -> `nginx:8080`
+- `PUBLIC_HTTPS_PORT` -> `nginx:8443`
+
+Internal services communicate over the compose network.
+ZAP, DB, Redis, PDF, and Ops are not intended for direct public exposure.
+
+---
+
+## 4) Setup lifecycle architecture
+
+Two layers enforce setup behavior:
+
+1. Django middleware redirects non-exempt requests to `/setup` while setup incomplete.
+2. Nginx entrypoint checks `nginx/state/setup_complete` to decide HTTP redirect behavior.
+
+This dual model provides both app-level and ingress-level setup safety.
+
+---
+
+## 5) Scan execution architecture
+
+### Request-to-execution path
+
+1. user submits job via `/scans`,
+2. Django persists `ScanJob` and enqueues Celery task,
+3. worker selects node and orchestrates spider/active phases,
+4. worker stores raw results,
+5. normalization/risk/evolution/reporting pipeline runs,
+6. job status transitions to completed or failed.
+
+### Node strategy
+
+- profile-pinned healthy node preferred,
+- otherwise healthy least-loaded node,
+- fallback enabled node,
+- hard failure when none available.
+
+---
+
+## 6) Data and analytics architecture
+
+Pipeline layers:
+
+- **Raw layer**: `RawZapResult` (unaltered scanner output),
+- **Normalized layer**: `Finding` + `FindingInstance`,
+- **Scoring layer**: `RiskSnapshot` across scopes,
+- **Evolution layer**: `ScanComparison` for diff and trend,
+- **Reporting layer**: `Report` artifacts (HTML/JSON/PDF).
+
+This layered model allows auditability and reproducible analytics.
+
+---
+
+## 7) Privileged operations architecture
+
+Ops functionality is intentionally optional and profile-gated.
+
+When enabled:
+
+- Django calls Ops Agent with token-authenticated requests,
+- Ops Agent validates service names/actions,
+- compose operations are executed against the project.
+
+This model centralizes risky actions while preserving default-safe deployment.
+
+---
+
+## 8) Failure domains
+
+Typical failure boundaries:
+
+- ingress/TLS issues (`nginx` + cert material),
+- async queue issues (`worker`/`redis`),
+- scan backend availability (`zap` nodes),
+- persistence failures (`db`),
+- report rendering failures (`pdf` service).
+
+Operational runbooks should isolate checks by boundary.
+
+---
+
+## 9) Scalability notes
+
+Current scaling model:
+
+- horizontal scaling of internal ZAP via compose replicas,
+- worker throughput tied to Celery worker resources,
+- DB/Redis are single service instances unless externally managed.
+
+Future scaling can externalize DB/queue and add worker replicas.

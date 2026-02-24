@@ -1,6 +1,16 @@
 # Ops Agent (`docker/ops`)
 
-FastAPI service that provides guarded operational actions for this compose project.
+FastAPI service providing controlled compose-level operations for ZapUI.
+
+---
+
+## Purpose
+
+Ops Agent allows admin workflows (restart/rebuild/redeploy/scale/logs) from the application control surface when explicitly enabled.
+
+It is disabled by default and should be treated as high-trust infrastructure.
+
+---
 
 ## Files
 
@@ -8,13 +18,15 @@ FastAPI service that provides guarded operational actions for this compose proje
 - `requirements.txt`
 - `main.py`
 
-## Endpoints
+---
 
-Unauthenticated:
+## Endpoint model
+
+### Public
 
 - `GET /health`
 
-Token-protected (via `X-OPS-TOKEN`) and gated by `ENABLE_OPS_AGENT=true`:
+### Token-protected (`X-OPS-TOKEN`)
 
 - `GET /compose/services`
 - `GET /compose/logs/{service}`
@@ -24,13 +36,20 @@ Token-protected (via `X-OPS-TOKEN`) and gated by `ENABLE_OPS_AGENT=true`:
 - `POST /compose/scale`
 - `GET /compose/env-summary`
 
-## Security model
+---
 
-- Agent actions are disabled unless `ENABLE_OPS_AGENT` is truthy.
-- Token auth requires `OPS_AGENT_TOKEN`.
-- Service arguments are validated against compose-discovered services (`docker compose ps --all --format json`).
-- Intended for internal-only access on the compose network (`ops:8091`).
+## Guardrails
 
-## Important warning
+- actions are allowed only when `ENABLE_OPS_AGENT=true`,
+- token required via `OPS_AGENT_TOKEN`,
+- service names validated against compose service inventory,
+- intended for internal compose network usage only.
 
-When enabled, this service uses mounted docker socket and project directory, so treat it as privileged infrastructure.
+---
+
+## Critical security warning
+
+When enabled, this service mounts Docker socket and project directory.
+That is privileged access and can affect the full host runtime in many setups.
+
+Use only in trusted environments with strict admin access control and credential hygiene.

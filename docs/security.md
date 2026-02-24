@@ -1,43 +1,109 @@
 # Security
 
-## Security boundaries
-- Public ingress is nginx (HTTP/HTTPS).
-- Django services are internal to compose network.
-- ZAP API is not host-exposed by default.
-- Database/Redis are internal services.
+This document explains ZapUI's security model, trust boundaries, and hardening recommendations.
 
-## Authentication and authorization
-- Custom user model with email login.
-- Built-in roles: `admin`, `security_engineer`, `readonly`.
-- Admin-only operations pages enforce role checks + password re-confirmation for sensitive actions.
+---
 
-## TLS model
-- Nginx expects `certs/fullchain.pem` + `certs/privkey.pem`.
-- Temporary self-signed cert is generated at startup if missing.
-- Production must replace with trusted certificates and strong key management.
+## 1) Trust boundaries
 
-## Ops Agent risk warning
-When enabled, Ops Agent mounts Docker socket and project directory. This is privileged and can control compose services.
+Primary boundaries:
 
-Hard requirements if enabling Ops Agent:
-- Keep disabled unless needed.
-- Use strong `OPS_AGENT_TOKEN`.
-- Restrict internal network access to ops service.
-- Limit admin account access.
-- Monitor and rotate credentials.
+- **Public boundary**: nginx ingress (HTTP/HTTPS).
+- **Application boundary**: Django web/worker internal services.
+- **Data boundary**: PostgreSQL + Redis internal state stores.
+- **Scanner boundary**: internal/external ZAP APIs.
+- **Privileged boundary**: optional Ops Agent with Docker socket access.
 
-## Docker socket implications
-Mounting `/var/run/docker.sock` effectively grants root-equivalent control on the host in many environments. Treat ops container as high trust.
+Understanding and minimizing cross-boundary exposure is the main hardening objective.
 
-## Data and secrets
-- Sensitive values live in `.env` and wizard settings.
-- Use secret management/secure env injection for production.
-- Backup encryption and access controls are mandatory for compliance.
+---
 
-## Hardening checklist
-- Replace default secrets (`DJANGO_SECRET_KEY`, DB passwords, ops token).
-- Enforce trusted TLS certs.
-- Set strict `DJANGO_ALLOWED_HOSTS`.
-- Keep images updated and scan dependencies.
-- Use least-privilege networking/firewall policy.
-- Restrict who can run installation/ops workflows.
+## 2) Authentication and authorization
+
+- Email-based authentication with custom user model.
+- Role model includes `admin`, `security_engineer`, `readonly`.
+- Admin-only checks protect operations and node-management surfaces.
+- Sensitive operations require password re-confirmation and are audit logged.
+
+---
+
+## 3) Setup-time security controls
+
+- Access is gated by setup middleware until initialization is complete.
+- TLS mode can be generated (self-signed) or provided (validated cert/key).
+- Production deployments must replace temporary/self-signed certificates with trusted certs.
+
+---
+
+## 4) Secrets and configuration safety
+
+Sensitive values include:
+
+- `DJANGO_SECRET_KEY`,
+- database credentials,
+- `OPS_AGENT_TOKEN`,
+- TLS private keys in `certs/privkey.pem`.
+
+Best practices:
+
+- never commit real secrets,
+- rotate secrets regularly,
+- restrict file permissions,
+- prefer secure secret injection paths in production.
+
+---
+
+## 5) Ops Agent and Docker socket risk
+
+Ops Agent is disabled by default for a reason.
+
+When enabled, the container mounts `/var/run/docker.sock`, which can grant host-equivalent control in many environments.
+
+Mandatory controls if enabling Ops:
+
+- strong random `OPS_AGENT_TOKEN`,
+- internal-only network exposure,
+- strict admin account controls,
+- frequent token rotation,
+- active audit review.
+
+---
+
+## 6) Network hardening recommendations
+
+- expose only required public ports,
+- keep internal services on private networks,
+- restrict host firewall rules to known management sources,
+- avoid direct public exposure of DB/Redis/ZAP/Ops services,
+- enforce TLS for operator access.
+
+---
+
+## 7) Application hardening checklist
+
+- set strict `DJANGO_ALLOWED_HOSTS`,
+- keep dependencies and base images updated,
+- use non-default strong credentials,
+- keep CSRF/session secure settings enabled in production,
+- monitor failed auth and privileged action patterns.
+
+---
+
+## 8) Backup and incident response security
+
+Backups include sensitive data and must be:
+
+- encrypted at rest,
+- transferred over secure channels,
+- access-controlled with least privilege,
+- periodically restore-tested.
+
+Incident response should include immediate secret rotation and audit log review after compromise suspicion.
+
+---
+
+## 9) Security limitations (current scope)
+
+- no built-in enterprise SSO provider integration in current baseline,
+- no native finding lifecycle status governance model yet,
+- Ops mode remains high-trust and should be used cautiously.

@@ -1,169 +1,246 @@
 # ZapUI
 
-ZapUI is a Dockerized control plane for OWASP ZAP scanning operations. It provides a guided setup wizard, multi-node scan orchestration, findings normalization, risk scoring, and evolution tracking so teams can move from raw scanner output to actionable, historical security operations.
+ZapUI is a Dockerized OWASP ZAP control plane that helps teams run security scans, manage findings over time, score risk, and track scan-to-scan evolution from a single operational interface.
 
-## What this tool is
-ZapUI is built for operators and security teams who need:
-- central management of projects and targets/assets
-- reusable scan profiles and queued scan jobs
-- support for internal and external ZAP nodes
-- persistent findings history instead of one-off raw alerts
-- weighted risk scoring and trend/evolution analysis
-- an install-and-operate model that works for fresh deployment and reconfiguration
+It is designed for practical deployment: one compose stack, guided first-run setup, optional privileged operations mode, and persistent reporting/analytics.
 
-## Core concepts
+---
+
+## 1) What this tool is
+
+ZapUI is not only a scanner trigger UI. It is a lifecycle platform for:
+
+- modeling applications as projects and targets/assets,
+- running repeatable scans through reusable profiles,
+- distributing scans across internal or external ZAP nodes,
+- preserving raw scanner outputs and normalized findings,
+- tracking risk snapshots and directional change over time,
+- producing downloadable reports (HTML, JSON, PDF),
+- operating services safely with explicit privileged boundaries.
+
+---
+
+## 2) Core concepts
 
 ### Project
-A logical application/security ownership boundary (example: `payments-api`).
+Top-level ownership and grouping boundary (application, business domain, product line).
 
 ### Target / Asset
-A concrete URL/service/environment inside a project that can be scanned.
+A concrete endpoint or service URL within a project that can be scanned.
 
 ### Zap Node
-Execution backend for scans.
-- **internal_managed**: compose-managed ZAP daemon(s)
-- **external**: remote ZAP endpoint added by operators
+A ZAP API endpoint used to execute scans.
 
-### Profile
-Reusable scan template controlling scan type, spider behavior, node pinning, and max duration.
+- `internal_managed`: created/scaled from compose service inventory.
+- `external`: manually registered remote ZAP node.
 
-### Job
-A single scan execution binding project + target + profile. Jobs move through pending/running/completed/failed.
+### Scan Profile
+Reusable scan strategy template (scan type, spider behavior, timeout, optional node pinning).
+
+### Scan Job
+A single scan execution instance linked to project, target, and profile.
 
 ### Findings
-Normalized vulnerability records deduplicated by target + plugin + title, with finding instances and first/last seen lifecycle.
+Normalized vulnerability records deduplicated by target/plugin/title and enriched with instances.
 
 ### Risk
-Weighted severity scoring snapshots captured at:
-- target scope
-- project scope
-- global scope
+Weighted severity scoring represented as snapshots at:
+
+- target scope,
+- project scope,
+- global scope.
 
 ### Evolution
-Comparison of consecutive completed scans for a target:
-- new findings
-- resolved findings
-- risk delta
+Comparison between consecutive completed scans for a target:
 
-## Architecture at a glance
-- `nginx`: ingress + TLS termination + setup redirect behavior
-- `web` (Django/Gunicorn): UI/API, setup wizard, orchestration triggers
-- `worker`/`beat` (Celery): async scan execution and scheduling
-- `db` (PostgreSQL): primary persistence
-- `redis`: broker/cache
-- `zap`: internal ZAP daemon(s)
-- `pdf`: report rendering helper
-- `ops` (optional): privileged compose operations agent
+- newly introduced findings,
+- resolved findings,
+- risk delta.
 
-See full docs:
-- `docs/architecture.md`
-- `docs/security.md`
-- `docs/operations.md`
-- `docs/api.md`
+---
 
-## Installation guide
+## 3) Architecture overview
 
-### Option A: Interactive installer (recommended)
-Run:
+Main services in `docker-compose.yml`:
+
+- `nginx`: ingress, TLS termination, setup-phase routing behavior,
+- `web`: Django + Gunicorn application,
+- `worker`: Celery async worker,
+- `beat`: Celery scheduler,
+- `db`: PostgreSQL,
+- `redis`: broker/cache,
+- `zap`: internal OWASP ZAP daemon,
+- `pdf`: internal PDF renderer,
+- `ops` (optional profile): privileged compose operations agent.
+
+Runtime flow summary:
+
+1. Users manage projects/targets/profiles.
+2. Scan jobs are queued.
+3. Worker executes ZAP API orchestration.
+4. Raw alerts are stored.
+5. Findings/risk/evolution models are updated.
+6. Reports are generated.
+
+For full details, see `docs/architecture.md`.
+
+---
+
+## 4) Installation guide
+
+## Option A: Interactive installer (recommended)
+
 ```bash
 bash scripts/install.sh
 ```
 
-Installer capabilities:
-- safe to re-run (idempotent)
-- prompts for install dir/repo/ports
-- can pull latest code
-- can toggle ops profile
-- can rebuild images and re-apply compose
-- updates `.env` values consistently
+What installer supports:
 
-After install, open:
+- safe re-runs (idempotent workflow),
+- clone or reuse existing checkout,
+- optional `git pull --ff-only`,
+- configurable public ports,
+- optional Ops Agent enablement,
+- optional rebuild with `docker compose build --pull`,
+- re-apply configuration with `docker compose up -d --remove-orphans`,
+- clear final status and endpoint output.
+
+After installation, open:
+
 - `http://localhost:<PUBLIC_HTTP_PORT>/setup`
 
-### Option B: Manual installation
+## Option B: Manual install
+
 1. Clone repository.
-2. Create `.env` from `.env.example` and set required values.
-3. Create runtime dirs:
+2. Copy `.env.example` to `.env` and set secure values.
+3. Create runtime directories:
    - `certs/`
    - `nginx/state/`
    - `nginx/conf.d/`
-4. Build and start stack:
-   ```bash
-   docker compose build
-   docker compose up -d
-   ```
-5. Complete `/setup` wizard.
+4. Build and start:
 
-## Setup wizard summary
-Wizard is stateful and can resume. Steps:
-1. Instance settings + DB mode (integrated/external PostgreSQL)
-2. First admin user creation
-3. TLS (generate self-signed or validate provided cert/key)
-4. ZAP pool and optional external node connectivity test
-5. Finalization and setup completion flag
+```bash
+docker compose build
+docker compose up -d
+```
 
-## Production notes
-- Replace all defaults and weak secrets.
-- Use trusted TLS certificates.
-- Restrict `DJANGO_ALLOWED_HOSTS`.
-- Keep backups and verify restore process.
-- Consider external managed PostgreSQL for production durability.
-- Ensure observability/log retention for web/worker/nginx and scan workflows.
+5. Complete first-run setup at `/setup`.
 
-## Security notes
+---
 
-### Ops Agent warning
-Ops Agent is **disabled by default**. If enabled, it can run compose operations and is security-sensitive.
+## 5) Setup wizard summary
+
+Wizard steps:
+
+1. instance metadata + database mode,
+2. initial admin account,
+3. TLS mode (generate or validate provided certs),
+4. internal ZAP pool size and optional external node test,
+5. finalize and mark setup complete.
+
+Wizard progress is persisted server-side and can resume across restarts/transitions.
+
+---
+
+## 6) Production notes
+
+Recommended production posture:
+
+- replace all default secrets immediately,
+- use trusted TLS certificates,
+- set strict `DJANGO_ALLOWED_HOSTS`,
+- enforce least-privilege network exposure,
+- monitor `web`, `worker`, `nginx`, and database logs,
+- keep a validated backup + restore process,
+- rehearse upgrade and rollback procedures.
+
+---
+
+## 7) Security notes
+
+### Ops Agent
+
+Ops Agent is disabled by default and should remain disabled unless required.
+
+When enabled, it can trigger compose operations. Treat it as sensitive control-plane infrastructure.
 
 ### Docker socket warning
-Ops Agent mounts `/var/run/docker.sock`, which is a high-privilege boundary. Treat access as host-level privileged access.
 
-### Minimum controls
-- strong `OPS_AGENT_TOKEN`
-- least-privilege network exposure
-- limit admin users
-- rotate credentials and monitor audit logs
+Ops Agent mounts `/var/run/docker.sock`; this is a high-privilege boundary and often equivalent to host-level control.
 
-## Troubleshooting
-- **Redirected to setup unexpectedly**: check setup completion state and `nginx/state/setup_complete`.
-- **Cannot login**: ensure setup finished and admin account exists.
-- **Node test fails**: verify node URL/API key/network reachability.
-- **Scans not progressing**: inspect worker/redis/db connectivity and task logs.
-- **HTTPS errors**: verify `certs/fullchain.pem` and `certs/privkey.pem`.
-- **Ops controls unavailable**: confirm `ENABLE_OPS_AGENT=true`, `COMPOSE_PROFILES=ops`, and valid token.
+### Minimum hardening controls
 
-## Backup/restore strategy
-Back up these assets together:
-- `db_data` volume (database)
-- `media_data` volume (reports/files)
-- `certs/` (TLS materials)
-- `nginx/state/` (setup completion and runtime state)
+- strong `OPS_AGENT_TOKEN`,
+- restricted network path to ops service,
+- minimal admin account footprint,
+- regular credential rotation,
+- audit review of privileged actions.
 
-Recommended approach:
-- scheduled volume snapshots + DB dumps
-- off-host encrypted copies
-- retention policy and restore drills
+See `docs/security.md` for full guidance.
 
-Restore outline:
-1. Stop stack.
-2. Restore DB/media/certs/nginx state.
-3. Start stack.
-4. Validate health, auth, and recent reporting data.
+---
 
-## Upgrade strategy
-1. Take full backup.
-2. Pull latest code (or re-run installer with pull enabled).
-3. Rebuild images and apply compose updates.
-4. Verify migrations/boot logs.
-5. Smoke-test login, node connectivity, scan lifecycle, reports, evolution pages.
-6. Roll back by restoring backup if regression appears.
+## 8) Troubleshooting
 
-## Docs and onboarding map
-- `README.md` (this file): complete deploy/operator overview
-- `docs/architecture.md`: service architecture and concept model
-- `docs/security.md`: hardening and privileged boundaries
-- `docs/operations.md`: day-2 runbooks, backup/restore, upgrades
-- `docs/api.md`: endpoint reference
-- `scripts/README.md`: installer usage details
-- `backend/zapcontrol/README.md`: backend internals
-- `nginx/README.md`: ingress and setup-flag behavior
+- **Unexpected redirects to setup**
+  - verify `SetupState.is_complete` and `nginx/state/setup_complete` consistency.
+- **Login issues**
+  - verify setup completion and admin creation step.
+- **Node connectivity failures**
+  - validate base URL, API key, and network path to ZAP API.
+- **Scan jobs stuck or failing**
+  - inspect `worker`, `redis`, and `db` health/logs.
+- **HTTPS failures**
+  - verify `certs/fullchain.pem` and `certs/privkey.pem` presence/permissions.
+- **Ops actions unavailable**
+  - verify `ENABLE_OPS_AGENT=true`, `COMPOSE_PROFILES=ops`, and token alignment.
+
+---
+
+## 9) Backup and restore strategy
+
+Back up these artifacts together:
+
+- `db_data` (PostgreSQL state),
+- `media_data` (reports and uploaded/generated media),
+- `certs/` (TLS private key and certificate chain),
+- `nginx/state/` (setup completion and runtime flags).
+
+Recommended strategy:
+
+- scheduled database dumps + volume snapshots,
+- encrypted off-host backup storage,
+- retention and integrity verification,
+- periodic restore drills.
+
+Restore runbook:
+
+1. stop stack (`docker compose down`),
+2. restore db/media/certs/nginx state,
+3. start stack (`docker compose up -d`),
+4. validate health/login/report access.
+
+---
+
+## 10) Upgrade strategy
+
+1. take a full backup snapshot,
+2. pull latest source (or use installer pull option),
+3. rebuild and redeploy services,
+4. verify migration logs and service health,
+5. run smoke checks (login, node test, scan, reports, evolution),
+6. roll back with backup restore if regression appears.
+
+---
+
+## 11) Documentation map
+
+- `README.md` (this file): operator onboarding and lifecycle guidance.
+- `docs/architecture.md`: detailed system architecture and flow.
+- `docs/security.md`: security boundaries and hardening controls.
+- `docs/operations.md`: day-0/day-2 runbook, backup/restore, upgrades.
+- `docs/api.md`: endpoint inventory and integration surfaces.
+- `scripts/README.md`: installer behavior and scenarios.
+- `backend/zapcontrol/README.md`: backend internals and model logic.
+- `nginx/README.md`: ingress/setup flag/TLS behavior.
+- `docker/*/README.md`: image-level implementation notes.

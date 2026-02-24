@@ -1,36 +1,49 @@
 # Web Image (`docker/web`)
 
-Build context for the Django application runtime used by:
+Container image for the Django application runtime reused by:
 
-- `web` (Gunicorn)
-- `worker` (Celery worker)
-- `beat` (Celery beat)
+- `web` (Gunicorn),
+- `worker` (Celery worker),
+- `beat` (Celery scheduler).
 
-## Files
+---
+
+## Contents
 
 - `Dockerfile`
 - `entrypoint.sh`
 
-## Image behavior
+---
 
-`Dockerfile`:
+## Dockerfile behavior
 
-- Uses `python:3.12-slim`
-- Installs app dependencies from `backend/zapcontrol/requirements.txt`
-- Copies Django project into `/app`
-- Sets `/entrypoint.sh` as container entrypoint
+- base image: `python:3.12-slim`,
+- installs Python dependencies from `backend/zapcontrol/requirements.txt`,
+- copies backend application into `/app`,
+- installs `/entrypoint.sh` as container entrypoint.
 
-`entrypoint.sh`:
+---
 
-1. Ensures required directories exist (`/app/staticfiles`, `/app/mediafiles`, `/nginx-state`, `/certs`).
-2. Runs Django migrations (`python manage.py migrate --noinput`).
-3. Collects static files (`python manage.py collectstatic --noinput`).
-4. Executes final runtime command (Gunicorn by default).
+## Entrypoint behavior
 
-## Default command
+At startup, entrypoint:
+
+1. creates required runtime directories,
+2. runs `python manage.py migrate --noinput`,
+3. runs `python manage.py collectstatic --noinput`,
+4. executes final container command.
+
+Default command for web service:
 
 ```bash
 gunicorn zapcontrol.wsgi:application --bind 0.0.0.0:8000 --workers 3
 ```
 
-Celery services override the command in `docker-compose.yml` while reusing the same image.
+Celery services override command in compose while reusing the same image and dependencies.
+
+---
+
+## Notes
+
+- migration-on-start behavior is convenient for small deployments,
+- for larger environments, evaluate dedicated migration control workflows.

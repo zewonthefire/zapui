@@ -1,54 +1,144 @@
 # Operations
 
-## Day-0 deployment
-1. Run `bash scripts/install.sh`.
-2. Open `/setup` and finish all wizard steps.
-3. Validate `/health`, login, and a sample scan.
+This runbook covers deployment, day-2 operations, backup/restore, upgrades, and troubleshooting.
 
-## Idempotent installer behavior
-`scripts/install.sh` is safe to re-run and supports:
-- reusing existing checkout
-- optional fast-forward pull
-- changing public ports and re-applying compose
-- toggling ops profile and re-applying
-- rebuilding images with latest upstream layers
+---
 
-## Daily workflows
-- View service and connectivity state at `/ops/overview` (admin).
-- Manage nodes at `/zapnodes`.
-- Launch scans at `/scans`.
-- Review reports and evolution pages.
+## 1) Day-0 deployment
 
-## Backups
-Critical persistence locations:
-- `db_data` (PostgreSQL)
-- `media_data` (reports/uploads)
-- `certs/` (TLS cert/key)
-- `nginx/state/` (setup state and runtime flags)
+Recommended path:
 
-Recommended strategy:
-- scheduled DB dump + volume snapshot
-- checksum verification + retention policy
-- off-host encrypted copies
-- routine restore drills
+1. run `bash scripts/install.sh`,
+2. complete setup wizard,
+3. validate health, login, and scan workflow,
+4. replace temporary certificates and default secrets,
+5. document operational ownership.
 
-## Restore
-1. Stop stack: `docker compose down`.
-2. Restore DB/media/certs/nginx_state artifacts.
-3. Start stack: `docker compose up -d`.
-4. Validate `/health`, login, and recent scans/reports.
+Manual path is supported via compose commands but installer is preferred.
 
-## Upgrades
-1. Create backup before change.
-2. Pull latest code.
-3. Re-run installer and choose build/rebuild.
-4. Run migrations (handled by web startup entrypoint).
-5. Smoke test setup flag, login, scan lifecycle, report download.
-6. Roll back by restoring previous artifacts if needed.
+---
 
-## Troubleshooting quick list
-- Setup redirect loops: verify `SetupState` and `nginx/state/setup_complete` consistency.
-- Node unhealthy: verify ZAP API reachability and API key.
-- Jobs stuck pending/running: check worker/redis logs and broker connectivity.
-- HTTPS issues: verify cert files and permissions.
-- Ops actions unavailable: confirm `ENABLE_OPS_AGENT=true`, profile `ops`, and token alignment.
+## 2) Installer behavior (idempotent operations)
+
+`scripts/install.sh` supports safe re-runs for:
+
+- initial install,
+- pulling latest code,
+- changing public ports,
+- enabling/disabling ops profile,
+- rebuilding images,
+- re-applying compose state.
+
+It updates key `.env` values and reconciles services using `docker compose up -d --remove-orphans`.
+
+---
+
+## 3) Standard day-2 workflows
+
+- monitor `/ops/overview` (admin),
+- manage nodes in `/zapnodes`,
+- maintain profiles in `/profiles`,
+- launch and monitor jobs in `/scans`,
+- consume artifacts in `/reports`,
+- analyze changes in target evolution pages.
+
+---
+
+## 4) Backup strategy
+
+Critical assets:
+
+- `db_data` volume,
+- `media_data` volume,
+- `certs/` directory,
+- `nginx/state/` directory.
+
+Recommended policy:
+
+- scheduled DB dumps and volume snapshots,
+- off-site encrypted storage,
+- retention policy with integrity checks,
+- restore drills on a regular cadence.
+
+---
+
+## 5) Restore strategy
+
+1. stop services (`docker compose down`),
+2. restore database and media artifacts,
+3. restore cert material and nginx state,
+4. start stack (`docker compose up -d`),
+5. validate health/auth/report access and recent scan history.
+
+---
+
+## 6) Upgrade strategy
+
+1. create verified backup snapshot,
+2. pull latest source,
+3. rebuild/redeploy stack,
+4. verify startup logs and migrations,
+5. run smoke tests,
+6. rollback via backup if regression appears.
+
+Smoke tests should include:
+
+- `/health`,
+- login,
+- node connectivity test,
+- sample scan completion,
+- report download,
+- evolution diff visibility.
+
+---
+
+## 7) Operational observability
+
+At minimum monitor:
+
+- service status (`docker compose ps`),
+- container logs (`docker compose logs -f <service>`),
+- failed scan rate,
+- worker queue latency,
+- DB connectivity and disk usage,
+- certificate expiration windows.
+
+---
+
+## 8) Troubleshooting matrix
+
+### Setup redirects never end
+
+- verify setup state in DB,
+- verify presence/consistency of `nginx/state/setup_complete`.
+
+### External node tests fail
+
+- verify node URL/API key,
+- verify network reachability from `web` container.
+
+### Jobs remain pending
+
+- verify worker is running,
+- verify Redis broker connectivity,
+- inspect Celery logs for task errors.
+
+### Report generation fails
+
+- verify `pdf` service health and logs,
+- inspect HTML payload and rendering options.
+
+### Ops actions unavailable
+
+- verify `ENABLE_OPS_AGENT=true`,
+- verify `COMPOSE_PROFILES=ops`,
+- verify token match between Django and ops service.
+
+---
+
+## 9) Emergency operations checklist
+
+- preserve logs before restart cycles,
+- avoid destructive operations without backups,
+- rotate secrets if compromise is suspected,
+- document incident timeline and remediation actions.
