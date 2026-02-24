@@ -4,7 +4,15 @@
 
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
-  <h1 class="h3 mb-0">ZAP Nodes</h1>
+  <div>
+    <h1 class="h3 mb-0">ZAP Nodes</h1>
+    <div class="text-muted small mt-1">
+      Internal instances: <strong>{{ registered_internal_count }}</strong> registered / <strong>{{ running_internal_count }}</strong> running containers
+      {% if sync_result %}
+        <span class="ms-2">(sync: +{{ sync_result.created }} created, {{ sync_result.disabled }} disabled)</span>
+      {% endif %}
+    </div>
+  </div>
   <form method="post">
     {% csrf_token %}
     <input type="hidden" name="action" value="test_all_nodes">

@@ -656,7 +656,27 @@ def zapnodes(request):
                 _audit_ops_action(request, 'test_all_nodes', target='all_zap_nodes', status=OpsAuditLog.STATUS_SUCCESS, result=f'tested={tested},failed={failed}')
         return redirect('zapnodes')
 
-    return render(request, 'core/zapnodes.html', {'nodes': ZapNode.objects.order_by('name')})
+    sync_result = None
+    running_internal_containers = []
+    if OPS_ENABLED:
+        try:
+            created, disabled = _sync_internal_nodes()
+            running_internal_containers = _discover_internal_zap_containers()
+            sync_result = {'created': created, 'disabled': disabled}
+        except Exception as exc:
+            messages.warning(request, _friendly_ops_error(exc, 'Unable to sync internal ZAP nodes'))
+
+    internal_nodes = ZapNode.objects.filter(managed_type=ZapNode.MANAGED_INTERNAL)
+    return render(
+        request,
+        'core/zapnodes.html',
+        {
+            'nodes': ZapNode.objects.order_by('name'),
+            'running_internal_count': len(running_internal_containers),
+            'registered_internal_count': internal_nodes.filter(enabled=True).count(),
+            'sync_result': sync_result,
+        },
+    )
 
 
 def _test_all_nodes() -> tuple[int, int]:

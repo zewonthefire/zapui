@@ -131,3 +131,36 @@ class SetupWizardStepOneDefaultsTests(TestCase):
         self.assertContains(response, 'value="https://configured.example.com"')
         self.assertContains(response, 'value="9443"')
         self.assertContains(response, 'value="9444"')
+
+
+class ZapNodesInternalSyncTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': True})
+        User = get_user_model()
+        self.admin = User.objects.create_user(email='admin3@example.com', password='Passw0rd!123', role='admin', is_staff=True)
+
+    @patch.dict(os.environ, {'ENABLE_OPS_AGENT': 'true'})
+    @patch('core.views._discover_internal_zap_containers')
+    def test_zapnodes_get_syncs_internal_nodes_and_shows_counts(self, mock_discover):
+        mock_discover.return_value = ['zapui-zap-1']
+        ZapNode.objects.create(
+            name='internal-zap-legacy',
+            base_url='http://old-zap:8090',
+            managed_type=ZapNode.MANAGED_INTERNAL,
+            docker_container_name='old-zap',
+            enabled=True,
+        )
+
+        self.client.login(username='admin3@example.com', password='Passw0rd!123')
+        response = self.client.get('/zapnodes')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, '1 registered / 1 running containers')
+        self.assertContains(response, '(sync: +1 created, 1 disabled)')
+
+        node = ZapNode.objects.get(name='internal-zap-1')
+        self.assertEqual(node.docker_container_name, 'zapui-zap-1')
+
+        legacy = ZapNode.objects.get(name='internal-zap-legacy')
+        self.assertFalse(legacy.enabled)
+        self.assertEqual(legacy.status, ZapNode.STATUS_DISABLED)
