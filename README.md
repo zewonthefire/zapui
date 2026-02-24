@@ -141,6 +141,8 @@ docker compose up -d
 Wizard steps:
 
 1. instance metadata + database mode,
+   - **External base URL**: the public URL clients should use to access ZapUI. It is used for generated links, redirects, and certificate hostnames. The field is auto-prefilled from the current request host when possible.
+   - **Display HTTP port (reference only)** and **Display HTTPS port (reference only)**: informational values shown in the UI and setup notes. They default to `PUBLIC_HTTP_PORT` and `PUBLIC_HTTPS_PORT` (from `install.sh` / `.env`) and do not change Docker or reverse-proxy port bindings by themselves.
 2. initial admin account,
 3. TLS mode (generate or validate provided certs),
 4. internal ZAP pool size and optional external node test,

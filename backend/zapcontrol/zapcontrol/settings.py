@@ -95,8 +95,9 @@ SESSION_SAVE_EVERY_REQUEST = os.getenv('SESSION_SAVE_EVERY_REQUEST', '1') == '1'
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 _secure_cookies = os.getenv('DJANGO_SECURE_COOKIES')
 if _secure_cookies is None:
-    SESSION_COOKIE_SECURE = not DEBUG
-    CSRF_COOKIE_SECURE = not DEBUG
+    # Default to non-secure cookies unless explicitly forced, to avoid CSRF breakage during HTTP setup/proxy edge cases.
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
 else:
     SESSION_COOKIE_SECURE = _secure_cookies == '1'
     CSRF_COOKIE_SECURE = _secure_cookies == '1'
