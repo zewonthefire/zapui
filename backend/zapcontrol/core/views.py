@@ -215,6 +215,27 @@ def _normalize_external_base_url(url: str) -> str:
     return normalized
 
 
+def _wizard_step1_defaults(request: HttpRequest) -> tuple[str, str]:
+    host = request.get_host().strip()
+    hostname = 'localhost'
+    port = None
+
+    if host:
+        parsed_host = urlparse(f'//{host}')
+        hostname = parsed_host.hostname or 'localhost'
+        port = parsed_host.port
+
+    scheme = 'https' if request.is_secure() else 'http'
+    if port:
+        base_url = f'{scheme}://{hostname}:{port}'
+        display_port = str(port)
+    else:
+        base_url = f'{scheme}://{hostname}'
+        display_port = '443' if scheme == 'https' else '80'
+
+    return base_url, display_port
+
+
 def _get_database_config_from_post(post_data) -> dict[str, str]:
     mode = post_data.get('database_mode', 'integrated').strip() or 'integrated'
     config = {
@@ -458,12 +479,16 @@ def setup(request):
     if requested_step and requested_step.isdigit():
         step = max(1, min(state.current_step, int(requested_step)))
 
+    default_external_base_url, default_display_http_port = _wizard_step1_defaults(request)
+
     context = {
         'state': state,
         'step': step,
         'wizard_data': state.wizard_data or {},
         'checks': connectivity_checks((state.wizard_data or {}).get('database', {})) if step == 5 else [],
         'ops_enabled': OPS_ENABLED,
+        'default_external_base_url': default_external_base_url,
+        'default_display_http_port': default_display_http_port,
     }
     return render(request, 'core/setup.html', context)
 
