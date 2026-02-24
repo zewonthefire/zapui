@@ -11,5 +11,8 @@ urlpatterns = [
     path('health', views.health, name='health'),
     path('setup', views.setup, name='setup'),
     path('dashboard', views.dashboard, name='dashboard'),
+    path('ops/overview', views.ops_overview, name='ops-overview'),
+    path('ops/logs/<str:service>', views.ops_logs, name='ops-logs'),
+    path('ops/actions', views.ops_actions, name='ops-actions'),
     path('api/version', views.api_version, name='api-version'),
 ]

@@ -1,0 +1,13 @@
+{% extends "core/base.html" %}
+
+{% block title %}Ops Logs | ZapControl{% endblock %}
+
+{% block content %}
+<div class="p-4 bg-white border rounded shadow-sm">
+  <h1 class="h4">Logs: {{ service }}</h1>
+  {% if not ops_enabled %}
+    <div class="alert alert-warning">Ops agent disabled; showing guidance only.</div>
+  {% endif %}
+  <pre class="bg-dark text-light p-3 rounded" style="max-height: 65vh; overflow: auto;">{{ logs }}</pre>
+</div>
+{% endblock %}

@@ -1,0 +1,49 @@
+{% extends "core/base.html" %}
+
+{% block title %}Ops Actions | ZapControl{% endblock %}
+
+{% block content %}
+<div class="p-4 bg-white border rounded shadow-sm mb-3">
+  <h1 class="h3">Operations Actions</h1>
+  {% if not ops_enabled %}
+    <div class="alert alert-warning mb-0">Ops agent is disabled. Actions are unavailable until ENABLE_OPS_AGENT=true and profile ops is running.</div>
+  {% endif %}
+</div>
+
+<div class="row g-3">
+  <div class="col-lg-4">
+    <div class="card"><div class="card-header">Restart service</div><div class="card-body">
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="action" value="restart" />
+        <div class="mb-2"><label class="form-label">Service</label><input class="form-control" name="service" placeholder="web" /></div>
+        <div class="mb-2"><label class="form-label">Confirm password</label><input type="password" class="form-control" name="password" required /></div>
+        <button class="btn btn-danger" {% if not ops_enabled %}disabled{% endif %}>Restart</button>
+      </form>
+    </div></div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card"><div class="card-header">Rebuild services</div><div class="card-body">
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="action" value="rebuild" />
+        <div class="mb-2"><label class="form-label">Services (comma-separated)</label><input class="form-control" name="services" value="web" /></div>
+        <div class="mb-2"><label class="form-label">Confirm password</label><input type="password" class="form-control" name="password" required /></div>
+        <button class="btn btn-danger" {% if not ops_enabled %}disabled{% endif %}>Rebuild</button>
+      </form>
+    </div></div>
+  </div>
+
+  <div class="col-lg-4">
+    <div class="card"><div class="card-header">Redeploy services</div><div class="card-body">
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="action" value="redeploy" />
+        <div class="mb-2"><label class="form-label">Services (comma-separated)</label><input class="form-control" name="services" value="web" /></div>
+        <div class="mb-2"><label class="form-label">Confirm password</label><input type="password" class="form-control" name="password" required /></div>
+        <button class="btn btn-danger" {% if not ops_enabled %}disabled{% endif %}>Redeploy</button>
+      </form>
+    </div></div>
+  </div>
+</div>
+
+<div class="mt-3 text-muted small">Known services: {{ services|join:", " }}</div>
+{% endblock %}
