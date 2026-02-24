@@ -29,6 +29,11 @@ class ServicePayload(BaseModel):
     services: list[str] = Field(default_factory=list)
 
 
+class ScalePayload(BaseModel):
+    service: str
+    replicas: int = Field(ge=0, le=50)
+
+
 def _compose_cmd(*parts: str) -> list[str]:
     return ["docker", "compose", "--project-name", PROJECT_NAME, *parts]
 
@@ -129,6 +134,17 @@ def compose_redeploy(payload: ServicePayload) -> dict[str, Any]:
     if result.returncode != 0:
         raise HTTPException(status_code=500, detail=result.stderr.strip())
     return {"status": "ok", "action": "redeploy", "services": services}
+
+
+
+
+@app.post("/compose/scale", dependencies=[Depends(_auth)])
+def compose_scale(payload: ScalePayload) -> dict[str, Any]:
+    _require_valid_services([payload.service])
+    result = _run_command(_compose_cmd("up", "-d", "--scale", f"{payload.service}={payload.replicas}", payload.service))
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=result.stderr.strip())
+    return {"status": "ok", "action": "scale", "service": payload.service, "replicas": payload.replicas}
 
 
 @app.get("/compose/env-summary", dependencies=[Depends(_auth)])

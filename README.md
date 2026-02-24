@@ -9,7 +9,7 @@ This repository now provides an **initial skeleton** for a future ZAP Control Ce
 - Risk scoring
 - Evolution/trending
 
-> This is intentionally only the baseline infrastructure + minimal backend wiring. Wizard, domain models, and scan workflows are not implemented yet.
+> This repo now includes a first-run setup wizard with persistence, TLS handling, and initial ZAP configuration.
 
 ## What this skeleton includes
 
@@ -84,12 +84,12 @@ Admin remains available at `/admin/`.
 
 ## Basic navigation and endpoints
 
-UI shell includes a Bootstrap top navigation with links for dashboard, setup placeholder, and API version.
+UI shell includes Bootstrap navigation and a full first-run setup wizard at `/setup`.
 
 Application/API endpoints currently available:
 
 - `GET /health` -> `{"status":"ok"}`
-- `GET /setup` -> setup placeholder response (wizard not implemented yet)
+- `GET/POST /setup` -> multi-step first-run setup wizard
 - `GET /dashboard` -> authenticated dashboard shell
 - `GET /api/version` -> `{"name":"zapcontrol","version":"..."}`
 
@@ -145,6 +145,34 @@ Read-only mode when disabled:
 - `/ops/overview` still shows DB/Redis/ZAP connectivity tests.
 - Action pages display clear enablement instructions.
 
+
+## Setup wizard walkthrough
+
+The wizard is available on `http://<host>:<PUBLIC_HTTP_PORT>/setup` while setup is incomplete.
+
+Steps:
+
+1. **Instance settings + database**: instance name, external base URL, display HTTP port reference, and database mode (integrated by default or external PostgreSQL with connectivity test).
+2. **First admin user**: creates the initial admin account with strong password validation.
+3. **TLS**: either generate a self-signed cert with SANs (`localhost`, `127.0.0.1`, external hostname) or validate an existing cert/key pair in `./certs`.
+4. **ZAP configuration**: choose ZAP pool size (default `1`), keep internal ZAP enabled, and optionally register/test one external ZAP node.
+5. **Finalize**: run health checks (including DB mode-specific connectivity), write `nginx/state/setup_complete`, and display the final HTTPS URL.
+
+After finalization, nginx redirects all HTTP traffic to HTTPS on restart because the setup flag exists.
+
+- If external DB is selected, the wizard stores runtime DB env overrides and attempts to disable the internal `db` service (via Ops Agent when enabled).
+- If Ops Agent is disabled, wizard provides the manual stop command for internal DB after external DB cutover.
+- Wizard progress is persisted server-side, and `/setup?step=<n>` resume links are shown to tolerate HTTP↔HTTPS transitions during setup.
+
+## ZAP pool size and scaling
+
+- Default pool size is `1` internal `zap` container.
+- If selected pool size is greater than `1`:
+  - **Ops agent enabled**: wizard requests scaling through the ops API.
+  - **Ops agent disabled**: wizard completes but shows a warning with the manual command (`make scale-zap N=<count>`).
+
+Ops agent matters because compose scaling is a privileged operation; when disabled, the platform intentionally requires an operator to run the scale command manually.
+
 ## Installation
 
 ### Option A: Quick install (interactive)
@@ -185,6 +213,7 @@ Key values:
 - `make migrate` - run Django migrations in `web`
 - `make collectstatic` - collect static assets in `web`
 - `make rebuild` - build + start
+- `make scale-zap N=<count>` - scale internal ZAP replicas manually when ops agent is disabled
 
 ## Django admin bootstrap
 
@@ -252,7 +281,6 @@ A browser warning is expected with the temporary self-signed certificate. Replac
 
 This skeleton does **not** implement:
 
-- full setup wizard logic
 - project/target/scan domain models
 - scan orchestration
 - finding normalization and risk scoring

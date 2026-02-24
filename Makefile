@@ -1,4 +1,4 @@
-.PHONY: up down logs migrate collectstatic rebuild
+.PHONY: up down logs migrate collectstatic rebuild scale-zap
 
 up:
 	docker compose up -d
@@ -17,3 +17,7 @@ collectstatic:
 
 rebuild:
 	docker compose up -d --build
+
+
+scale-zap:
+	docker compose up -d --scale zap=$${N:-1} zap

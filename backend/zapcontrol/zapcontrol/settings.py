@@ -17,10 +17,12 @@ INSTALLED_APPS = [
     'rest_framework',
     'accounts',
     'core',
+    'targets',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'core.middleware.SetupWizardMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',

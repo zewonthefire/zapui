@@ -1,0 +1,91 @@
+{% extends "core/base.html" %}
+{% block title %}Setup Wizard{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+  <h1 class="h3">First-run Setup Wizard</h1>
+  <span class="badge bg-primary">Step {{ step }} / 5</span>
+</div>
+
+<div class="alert alert-secondary">
+  Resume links (fallback HTTP/HTTPS):
+  <a href="http://{{ request.get_host }}/setup?step={{ step }}">HTTP</a> |
+  <a href="https://{{ request.get_host }}/setup?step={{ step }}">HTTPS</a>
+</div>
+
+<form method="post" class="card shadow-sm">
+  {% csrf_token %}
+  <input type="hidden" name="step" value="{{ step }}">
+  <div class="card-body">
+    {% if step == 1 %}
+      <h2 class="h5">1) Instance settings + Database</h2>
+      <div class="mb-3"><label class="form-label">Instance name</label><input name="instance_name" class="form-control" value="{{ wizard_data.instance.instance_name|default:'' }}" required></div>
+      <div class="mb-3"><label class="form-label">External base URL</label><input name="external_base_url" class="form-control" placeholder="http://host:8080" value="{{ wizard_data.instance.external_base_url|default:'' }}" required></div>
+      <div class="mb-3"><label class="form-label">Display HTTP port (reference only)</label><input name="display_http_port" class="form-control" value="{{ wizard_data.instance.display_http_port|default:'8080' }}"></div>
+
+      <h3 class="h6 mt-4">Database mode</h3>
+      <div class="form-check">
+        <input class="form-check-input" type="radio" name="database_mode" value="integrated" {% if wizard_data.database.mode|default:'integrated' == 'integrated' %}checked{% endif %}>
+        <label class="form-check-label">Integrated database (default)</label>
+      </div>
+      <div class="form-check mb-3">
+        <input class="form-check-input" type="radio" name="database_mode" value="external" {% if wizard_data.database.mode == 'external' %}checked{% endif %}>
+        <label class="form-check-label">External PostgreSQL</label>
+      </div>
+      <div class="row g-2">
+        <div class="col-md-4"><input class="form-control" name="external_db_host" placeholder="DB host" value="{{ wizard_data.database.host|default:'' }}"></div>
+        <div class="col-md-2"><input class="form-control" name="external_db_port" placeholder="5432" value="{{ wizard_data.database.port|default:'5432' }}"></div>
+        <div class="col-md-3"><input class="form-control" name="external_db_name" placeholder="DB name" value="{{ wizard_data.database.name|default:'' }}"></div>
+        <div class="col-md-3"><input class="form-control" name="external_db_user" placeholder="DB user" value="{{ wizard_data.database.user|default:'' }}"></div>
+      </div>
+      <div class="mt-2"><input type="password" class="form-control" name="external_db_password" placeholder="DB password (required for external mode)"></div>
+      {% if wizard_data.database_connectivity %}<p class="text-muted mt-2">{{ wizard_data.database_connectivity }}</p>{% endif %}
+
+    {% elif step == 2 %}
+      <h2 class="h5">2) First admin user</h2>
+      <div class="mb-3"><label class="form-label">Admin email</label><input type="email" name="admin_email" class="form-control" value="{{ wizard_data.admin_email|default:'' }}" required></div>
+      <div class="mb-3"><label class="form-label">Strong password</label><input type="password" name="admin_password" class="form-control" required></div>
+
+    {% elif step == 3 %}
+      <h2 class="h5">3) TLS certificates</h2>
+      <div class="form-check"><input class="form-check-input" type="radio" name="tls_mode" value="generate" {% if wizard_data.tls_mode|default:'generate' == 'generate' %}checked{% endif %}><label class="form-check-label">Generate self-signed cert (SAN: localhost, 127.0.0.1, external host)</label></div>
+      <div class="form-check"><input class="form-check-input" type="radio" name="tls_mode" value="provided" {% if wizard_data.tls_mode == 'provided' %}checked{% endif %}><label class="form-check-label">Use provided cert already in /certs</label></div>
+      {% if wizard_data.tls_note %}<p class="text-muted mt-2">{{ wizard_data.tls_note }}</p>{% endif %}
+
+    {% elif step == 4 %}
+      <h2 class="h5">4) ZAP configuration</h2>
+      <div class="mb-3"><label class="form-label">Pool size</label><input type="number" min="1" name="zap_pool_size" class="form-control" value="{{ wizard_data.zap.pool_size|default:'1' }}"></div>
+      <p class="text-muted">Internal ZAP is enabled by default.</p>
+      <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="add_external" {% if wizard_data.zap.external_enabled %}checked{% endif %}><label class="form-check-label">Add one external ZAP node now</label></div>
+      <div class="mb-3"><label class="form-label">External ZAP base URL</label><input name="external_zap_base_url" class="form-control" placeholder="http://zap-node:8090" value="{{ wizard_data.zap.external_url|default:'' }}"></div>
+      <div class="mb-3"><label class="form-label">External ZAP API key</label><input name="external_zap_api_key" class="form-control"></div>
+      {% if not state.pool_applied and state.pool_warning %}
+      <div class="alert alert-warning">{{ state.pool_warning }}</div>
+      {% endif %}
+      {% if not ops_enabled %}<div class="alert alert-info">Ops Agent disabled: scaling above 1 won't auto-apply.</div>{% endif %}
+
+    {% elif step == 5 %}
+      <h2 class="h5">5) Finalize</h2>
+      <p>Health checks summary:</p>
+      <ul>
+        {% for check in checks %}
+          <li><strong>{{ check.name }}:</strong> {{ check.status }} ({{ check.hint }})</li>
+        {% endfor %}
+      </ul>
+      {% if wizard_data.internal_db_disable_note %}
+        <div class="alert alert-warning">{{ wizard_data.internal_db_disable_note }}</div>
+      {% endif %}
+      {% if wizard_data.final_https_url %}
+      <div class="alert alert-success">Setup completed. Final URL: <a href="{{ wizard_data.final_https_url }}">{{ wizard_data.final_https_url }}</a></div>
+      {% endif %}
+    {% endif %}
+  </div>
+  <div class="card-footer d-flex justify-content-between">
+    <button name="action" value="back" class="btn btn-outline-secondary" {% if step == 1 %}disabled{% endif %}>Back</button>
+    {% if step < 5 %}
+      <button name="action" value="next" class="btn btn-primary">Continue</button>
+    {% else %}
+      <button name="action" value="finalize" class="btn btn-success">Finalize setup</button>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}
