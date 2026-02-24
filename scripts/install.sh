@@ -4,7 +4,7 @@ set -euo pipefail
 DEFAULT_INSTALL_DIR="${HOME}/projects/zapui"
 DEFAULT_REPO_URL="https://github.com/zewonthefire/zapui"
 DEFAULT_HTTP_PORT="8090"
-DEFAULT_HTTPS_PORT="443"
+DEFAULT_HTTPS_PORT="8093"
 DEFAULT_PUBLIC_HOST="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo localhost)"
 
 color() { printf "\033[%sm%s\033[0m\n" "$1" "$2"; }
