@@ -77,6 +77,12 @@
       <div class="form-check mb-2"><input class="form-check-input" type="checkbox" name="add_external" {% if wizard_data.zap.external_enabled %}checked{% endif %}><label class="form-check-label">Add one external ZAP node now</label></div>
       <div class="mb-3"><label class="form-label">External ZAP base URL</label><input name="external_zap_base_url" class="form-control" placeholder="http://zap-node:8090" value="{{ wizard_data.zap.external_url|default:'' }}"></div>
       <div class="mb-3"><label class="form-label">External ZAP API key</label><input name="external_zap_api_key" class="form-control"></div>
+      {% if wizard_data.zap.internal_api_key %}
+      <div class="alert alert-info">
+        Internal ZAP API key used for managed nodes: <code>{{ wizard_data.zap.internal_api_key }}</code><br>
+        <small>{{ wizard_data.zap.internal_api_key_note }}</small>
+      </div>
+      {% endif %}
       {% if not state.pool_applied and state.pool_warning %}
       <div class="alert alert-warning">{{ state.pool_warning }}</div>
       {% endif %}
@@ -92,6 +98,9 @@
       </ul>
       {% if wizard_data.internal_db_disable_note %}
         <div class="alert alert-warning">{{ wizard_data.internal_db_disable_note }}</div>
+      {% endif %}
+      {% if wizard_data.zap_restart_after_setup.note %}
+      <div class="alert {% if wizard_data.zap_restart_after_setup.applied %}alert-success{% else %}alert-warning{% endif %}">{{ wizard_data.zap_restart_after_setup.note }}</div>
       {% endif %}
       {% if wizard_data.final_https_url %}
       <div class="alert alert-success">Setup completed. Final URL: <a href="{{ wizard_data.final_https_url }}">{{ wizard_data.final_https_url }}</a></div>
