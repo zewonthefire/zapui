@@ -1,33 +1,44 @@
-# Scripts Directory
+# Scripts
 
-This folder contains helper scripts for bootstrapping and operating ZapUI.
+Operational scripts for deploying and maintaining ZapUI.
 
-## Files
+---
 
-- `install.sh`: Interactive installer that clones or updates the repo, writes key `.env` values, builds images, and starts the compose stack.
+## `install.sh`
 
-## `install.sh` workflow
+Interactive installer/upgrader designed for safe day-0 and day-2 operations.
 
-1. Prompts for install directory, repository URL, HTTP/HTTPS ports, and whether to enable the Ops Agent.
-2. Clones the repository if missing, or runs a fast-forward pull if it already exists.
-3. Creates required runtime folders (`certs`, `nginx/state`, `nginx/conf.d`).
-4. Creates `.env` from `.env.example` when missing.
-5. Upserts runtime values:
-   - `PUBLIC_HTTP_PORT`
-   - `PUBLIC_HTTPS_PORT`
-   - `ENABLE_OPS_AGENT`
-   - `COMPOSE_PROFILES`
-6. Runs:
-   - `docker compose build`
-   - `docker compose up -d`
+### Core capabilities
 
-## Usage
+- idempotent and safe to re-run,
+- clone repository or reuse existing checkout,
+- optional `git pull --ff-only` for updates,
+- configurable public HTTP/HTTPS ports,
+- optional enable/disable of Ops Agent profile,
+- optional image build/rebuild with upstream refresh,
+- compose reconciliation using `docker compose up -d --remove-orphans`,
+- explicit status output and endpoint summary.
+
+### Why this matters
+
+The script is designed to reduce operational drift and provide a consistent update path without requiring manual `.env` surgery each time.
+
+### Usage
 
 ```bash
 bash scripts/install.sh
 ```
 
-## Notes
+### Typical scenarios
 
-- Enabling Ops Agent sets `COMPOSE_PROFILES=ops`.
-- Installer does not generate long-lived trusted certs; temporary/self-signed cert behavior is handled by nginx container startup.
+- first installation on a new host,
+- changing public ingress ports,
+- enabling/disabling ops profile,
+- pulling latest code and rebuilding images,
+- applying config updates after maintenance windows.
+
+### Safety notes
+
+- Ops Agent enablement is explicitly prompted with a warning because it is privileged.
+- Script checks for `git` and `docker` availability before continuing.
+- Existing `.env` values are upserted rather than blindly overwritten.

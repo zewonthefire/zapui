@@ -1,24 +1,33 @@
 # Nginx Image (`docker/nginx`)
 
-Container image for reverse proxy and TLS termination.
+Image responsible for ZapUI ingress and TLS termination.
 
-## Files
-
-- `Dockerfile`
+---
 
 ## Build details
 
-- Base image: `nginx:1.27-alpine`
-- Installs `openssl` for temporary cert generation support
-- Copies host script `nginx/scripts/entrypoint.sh` to `/entrypoint.sh`
-- Uses `/entrypoint.sh` as container entrypoint
+- base image: `nginx:1.27-alpine`,
+- installs `openssl` to support temporary cert generation,
+- copies runtime entrypoint from `nginx/scripts/entrypoint.sh`,
+- starts nginx via `/entrypoint.sh`.
 
-## Runtime behavior source
+---
 
-Most runtime behavior is implemented in:
+## Runtime behavior sources
 
-- `nginx/scripts/entrypoint.sh`
-- `nginx/state/setup_complete`
-- mounted cert files under `/certs`
+Image behavior depends on mounted runtime assets:
 
-See `nginx/README.md` for full behavior details.
+- `nginx/scripts/entrypoint.sh`,
+- `nginx/state/setup_complete`,
+- certificate files mounted under `/certs`,
+- generated config output under `/etc/nginx/conf.d`.
+
+See `nginx/README.md` for the full operational model.
+
+---
+
+## Operational notes
+
+- keep cert files mounted and valid for production,
+- verify generated config on startup if routing behavior is unexpected,
+- inspect logs with `docker compose logs nginx`.

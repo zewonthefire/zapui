@@ -1,132 +1,216 @@
 # ZapControl Backend Guide
 
-This README documents the Django backend located in `backend/zapcontrol`.
-It covers architecture, data model, scan orchestration, findings normalization, risk scoring, and local operations.
+This guide documents the Django backend in `backend/zapcontrol` in depth.
+It is intended for engineers who operate, extend, or troubleshoot ZapUI.
 
 ---
 
-## 1) What this backend does
+## 1) Executive summary
 
-ZapControl is the application API/UI backend for:
+ZapControl is the application engine behind ZapUI. It:
 
-- authentication and role-based access
-- setup wizard and instance configuration
-- ZAP node inventory and health checks
-- scan profile/job orchestration via Celery
-- raw alert persistence
-- normalized findings lifecycle
-- weighted risk snapshots for target/project/global scopes
-- asset evolution diffs between consecutive successful scans
+- authenticates users and enforces role-aware access,
+- gates access behind the first-run setup wizard until initialization is complete,
+- orchestrates OWASP ZAP scans asynchronously with Celery,
+- stores raw scan outputs and normalizes them into long-lived findings,
+- computes weighted risk snapshots at target, project, and global scope,
+- computes evolution diffs between consecutive completed scans,
+- generates persisted reports (HTML, JSON, PDF),
+- provides operational pages and audit logging for sensitive actions.
 
-Primary app modules:
-
-- `accounts`: custom user model and login/logout flow
-- `core`: dashboard, setup wizard, ops pages, global settings
-- `targets`: projects, targets, profiles, scan jobs, findings/risk
+In short: it transforms scanner API calls into an auditable, historical security control plane.
 
 ---
 
-## 2) Runtime architecture
+## 2) Backend scope and responsibilities
+
+The backend is split into three Django apps:
+
+- `accounts`
+  - custom user model using email login,
+  - login/logout views,
+  - role metadata.
+- `core`
+  - setup wizard state and persistence,
+  - dashboard and version endpoints,
+  - operations overview/actions/log views,
+  - settings and audit log models,
+  - setup-gating middleware.
+- `targets`
+  - project/target inventory,
+  - scan profile and scan job lifecycle,
+  - zap node inventory and health checks,
+  - raw alert storage,
+  - findings normalization,
+  - risk snapshots and scan comparisons,
+  - report generation and downloads.
+
+---
+
+## 3) Runtime architecture
 
 ### Django process
 
 - Entrypoint: `manage.py`
 - Settings package: `zapcontrol.settings`
 - URL root: `zapcontrol.urls`
+- Gunicorn serves the web app in containers.
 
 ### Async execution
 
-- Celery worker executes scan orchestration task(s)
-- Redis used as broker/cache
-- PostgreSQL used for persistence
+- Celery worker executes scan orchestration jobs.
+- Celery beat is available for schedule-driven workflows.
+- Redis is used for broker/result backends.
 
-### External integrations
+### Persistence
 
-- OWASP ZAP API (`/JSON/...`) through configured `ZapNode`
-- Optional Ops Agent for compose operations
+- PostgreSQL is the primary state store.
+- SQLite is supported for local testing/development (`DJANGO_DB_ENGINE=sqlite`).
+
+### Service integrations
+
+- OWASP ZAP JSON API for scan execution and alerts retrieval.
+- Internal PDF service for HTML-to-PDF report rendering.
+- Optional Ops Agent for compose-driven operational actions.
 
 ---
 
-## 3) Data model overview
+## 4) Setup wizard and request gating
 
-The security/scanning domain lives in `targets.models`.
+### Wizard persistence model
 
-### Core scanning entities
+Setup state is persisted in `core.SetupState`:
 
-- `Project` -> logical application grouping
-- `Target` -> scan endpoint/environment within a project
-- `ScanProfile` -> scan strategy/template
-- `ScanJob` -> single execution record
-- `RawZapResult` -> unmodified alerts payload captured per job
+- `is_complete`: global completion flag,
+- `current_step`: active wizard step,
+- `wizard_data`: accumulated setup payload,
+- additional operational notes fields.
 
-### Normalized findings entities
+### Middleware behavior
+
+`core.middleware.SetupWizardMiddleware` redirects requests to `/setup` while setup is incomplete, except for exempt routes (health/static/media/version/setup).
+
+This guarantees users cannot operate an uninitialized instance.
+
+---
+
+## 5) Authentication, identity, and authorization
+
+### User model
+
+- Custom `accounts.User` replaces username with unique email.
+- Role values:
+  - `admin`
+  - `security_engineer`
+  - `readonly`
+
+### Access control patterns
+
+- Login required for core application pages.
+- Admin-only checks are enforced in operations/zap node management paths.
+- Sensitive operations require password re-confirmation.
+- Audit events are written to `core.OpsAuditLog` for privileged actions.
+
+---
+
+## 6) Domain model (security and scanning)
+
+The main domain models are in `targets.models`.
+
+### Inventory and execution entities
+
+- `Project`: organizational grouping of assets.
+- `Target`: scan endpoint/environment in a project.
+- `ZapNode`: scan engine endpoint (internal managed or external).
+- `ScanProfile`: reusable scan strategy template.
+- `ScanJob`: a concrete execution instance.
+- `RawZapResult`: unmodified alerts payload for a completed scan.
+
+### Findings entities
 
 - `Finding`
-  - dedup key: `(target, zap_plugin_id, title)`
-  - tracks `first_seen`, `last_seen`, `instances_count`
+  - dedup key: `(target, zap_plugin_id, title)`,
+  - tracks first seen, last seen, severity, and instance count.
 - `FindingInstance`
-  - concrete occurrence tied to `scan_job`
-  - uniqueness includes `url`, `parameter`, `evidence`
+  - concrete occurrence for a specific scan,
+  - uniqueness across finding + scan + location/evidence attributes.
 
-### Risk entities
+### Risk and evolution entities
 
 - `RiskSnapshot`
-  - `scan_job` required
-  - `project` nullable
-  - `target` nullable
-  - `risk_score` numeric
-  - `counts_by_severity` JSON
+  - required `scan_job`,
+  - optional `target` and `project` for scope,
+  - stores weighted score and severity counts.
+- `ScanComparison`
+  - links previous and current completed scans for a target,
+  - stores new/resolved finding id lists and risk delta.
 
-Scope semantics:
+### Reporting entity
 
-- Target risk snapshot: `target != null`, `project == null`
-- Project risk snapshot: `project != null`, `target == null`
-- Global risk snapshot: both null
-
----
-
-## 4) Scan lifecycle and orchestration
-
-Task entrypoint: `targets.tasks.start_scan_job`.
-
-High-level flow:
-
-1. Resolve execution node (profile-pinned or auto-selected healthy node)
-2. Optionally run spider and poll status
-3. Run active scan and poll status
-4. Fetch alerts from ZAP API
-5. Persist `RawZapResult`
-6. Normalize alerts into `Finding` + `FindingInstance`
-7. Compute and persist `RiskSnapshot` for target/project/global
-8. Compute and persist `ScanComparison` against the previous successful scan for the target
-9. Mark job completed (or failed/retried on errors)
-
-Notes:
-
-- transient network/timeouts are retried with Celery autoretry
-- API scan type currently exists as a placeholder and is marked failed
+- `Report`
+  - one-to-one with `ScanJob`,
+  - stores HTML/JSON/PDF report files.
 
 ---
 
-## 5) Findings normalization
+## 7) Scan orchestration lifecycle
 
-Normalization module: `targets/risk.py`.
+Entry task: `targets.tasks.start_scan_job`.
 
-Rules implemented:
+### Flow
 
-- Deduplicate by `(target, zap_plugin_id, title)`
-- Map alert severity aliases into canonical severities: `High`, `Medium`, `Low`, `Info`
-- Create/update `Finding`:
-  - initialize `first_seen` and `last_seen` for new records
-  - update `last_seen` on recurrence
-- Create `FindingInstance` per unique URL/parameter/evidence tuple
-- Recompute and store `instances_count` on each affected finding
+1. Resolve scan node (profile-pinned or scheduler-selected).
+2. Move job from `pending` to `running`.
+3. Optionally execute spider phase and poll completion.
+4. Execute active scan and poll completion.
+5. Fetch raw alerts.
+6. Persist `RawZapResult`.
+7. Normalize alerts into findings and finding instances.
+8. Create risk snapshots (target/project/global).
+9. Compute scan comparison against previous completed scan.
+10. Generate report artifacts.
+11. Mark job `completed` or `failed` with reason.
 
-This turns volatile raw alerts into stable, trackable findings over time.
+### Error and retry behavior
+
+- Network/transient failures are retried with Celery autoretry settings.
+- Non-retryable failures transition job to `failed` with captured error message.
 
 ---
 
-## 6) Risk scoring model
+## 8) Node selection and health model
+
+Node selection strategy:
+
+1. If profile has a pinned node, that node must be enabled and healthy.
+2. Else prefer enabled+healthy node with lowest active running jobs.
+3. Else fallback to first enabled node.
+4. If none enabled, orchestration fails.
+
+Node health test targets:
+
+- `/JSON/core/view/version/` with optional API key.
+- Persisted health metadata includes status, latency, version, and timestamp.
+
+---
+
+## 9) Findings normalization model
+
+Normalization logic resides in `targets/risk.py`.
+
+Key rules:
+
+- normalize risk labels to canonical severities (`High`, `Medium`, `Low`, `Info`),
+- deduplicate at finding level by target + plugin + title,
+- update recurrence metadata (`last_seen`),
+- persist granular finding instances per scan/evidence,
+- maintain `instances_count` consistency.
+
+This converts scanner-event streams into stable vulnerability history.
+
+---
+
+## 10) Risk scoring model
 
 Default weights:
 
@@ -135,99 +219,117 @@ Default weights:
 - Low = 2
 - Info = 1
 
-Configurable via `core.Setting`:
+Optional override source:
 
-- key: `risk_weights`
-- value: JSON object, e.g.
+- `core.Setting` with key `risk_weights`.
 
-```json
-{
-  "High": 12,
-  "Medium": 6,
-  "Low": 2,
-  "Info": 1
-}
-```
+Scoring formula per scope:
 
-Score formula used for each scope:
+`score = Σ(count_by_severity[level] * weight[level])`
 
-`risk_score = (High_count * W_high) + (Medium_count * W_medium) + (Low_count * W_low) + (Info_count * W_info)`
+Generated scopes on each completed scan:
 
-Generated per completed scan:
-
-- target score
-- project score
-- global score
+- target snapshot,
+- project snapshot,
+- global snapshot.
 
 ---
 
+## 11) Evolution diff computation
 
+Function: `create_scan_comparison(scan_job)`.
 
-## 7) Evolution tracking and diff computation
+Algorithm:
 
-Evolution tracking captures what changed between the newest completed scan and the prior completed scan for the same target.
-
-Model: `ScanComparison`
-
-- `target` -> target being compared
-- `from_scan_job` -> older successful scan
-- `to_scan_job` -> newer successful scan
-- `new_finding_ids` -> finding IDs present in `to` but not in `from`
-- `resolved_finding_ids` -> finding IDs present in `from` but not in `to`
-- `risk_delta` -> `to_target_risk_score - from_target_risk_score`
-- `created_at` -> comparison creation timestamp
-
-Computation details:
-
-1. On scan completion, normalization and risk snapshots run first.
-2. The task selects the immediately previous successful scan for the same target.
-3. Finding sets are built from `FindingInstance` rows per scan (distinct `finding_id`).
-4. Deltas are computed as set differences:
+1. Find previous completed scan for same target.
+2. Build finding id sets from finding instances for previous/current scans.
+3. Compute set deltas:
    - `new = current - previous`
    - `resolved = previous - current`
-5. Risk delta is derived from target-level `RiskSnapshot` values for those two scans.
-6. A single `ScanComparison` row is created/updated for that scan pair.
+4. Compute `risk_delta = current_target_risk - previous_target_risk`.
+5. Upsert `ScanComparison` row.
 
-This provides a stable historical chain of scan-to-scan changes.
-
----
-
-## 8) Risk and evolution pages
-
-- `/dashboard`
-  - current global risk score
-  - recent global trend points
-  - links to projects/targets
-- `/projects/<id>`
-  - current project risk score
-  - top risky targets (latest target scores)
-- `/targets/<id>`
-  - current target risk score
-  - open findings list with severity, instance count, last seen
-  - link to evolution views
-- `/targets/<id>/evolution`
-  - risk-over-time chart for that target
-  - scan comparison table including risk delta and finding counts
-- `/targets/<id>/evolution/<comparison_id>`
-  - diff details showing new vs resolved findings
-
----
-## 9) Admin surfaces
-
-Django admin registers:
-
-- core scan models (`Project`, `Target`, `ScanProfile`, `ScanJob`, `RawZapResult`)
-- normalized risk models (`Finding`, `FindingInstance`, `RiskSnapshot`)
-
-Use admin to:
-
-- inspect dedup behavior
-- tune `risk_weights` in `Setting`
-- verify snapshot generation over time
+Outcome: a deterministic scan-over-scan change log.
 
 ---
 
-## 10) Local development
+## 12) Reporting pipeline (HTML, JSON, PDF)
+
+Reports are generated after successful scan completion.
+
+### Output formats
+
+- HTML for human-readable detail,
+- JSON for machine ingestion,
+- PDF for sharing and archival.
+
+### Pipeline
+
+1. Build report payload from job/findings/risk data.
+2. Render HTML template.
+3. Serialize JSON payload.
+4. Send HTML to PDF service (`POST /render` on `PDF_SERVICE_URL`).
+5. Save files and create/update `Report` record.
+
+### Storage paths (under `MEDIA_ROOT`)
+
+- `reports/html/scan-<id>.html`
+- `reports/json/scan-<id>.json`
+- `reports/pdf/scan-<id>.pdf`
+
+### Download routes
+
+- `/scans/<id>/report/html`
+- `/scans/<id>/report/json`
+- `/scans/<id>/report/pdf`
+- `/reports`
+
+---
+
+## 13) User-facing backend routes (high-value)
+
+- Setup and platform:
+  - `/setup`
+  - `/health`
+  - `/api/version`
+- Authentication:
+  - `/login`
+  - `/logout`
+- Core and operations:
+  - `/dashboard`
+  - `/ops/overview`
+  - `/ops/actions`
+  - `/ops/logs/<service>`
+  - `/zapnodes`
+- Scanning and analysis:
+  - `/profiles`
+  - `/scans`
+  - `/scans/<id>`
+  - `/projects/<id>`
+  - `/targets/<id>`
+  - `/targets/<id>/evolution`
+  - `/targets/<id>/evolution/<comparison_id>`
+
+---
+
+## 14) Administration surfaces
+
+Django admin provides diagnostic and governance access to:
+
+- scan entities (`Project`, `Target`, `ScanProfile`, `ScanJob`, `RawZapResult`),
+- analysis entities (`Finding`, `FindingInstance`, `RiskSnapshot`, `ScanComparison`, `Report`),
+- control entities (`Setting`, `SetupState`, `OpsAuditLog`, users/roles).
+
+Typical admin workflows:
+
+- verify normalization behavior,
+- tune risk weights,
+- inspect job failures and node health,
+- review operations audit trail.
+
+---
+
+## 15) Local development and maintenance
 
 From this directory:
 
@@ -244,22 +346,23 @@ python manage.py migrate
 python manage.py test
 ```
 
-### Running local server
+### Local server
 
 ```bash
 python manage.py runserver 0.0.0.0:8000
 ```
 
-If your local environment is outside docker-compose, ensure DB/Redis hostnames in settings/env resolve correctly.
+For non-compose local runs, ensure environment values for DB/Redis/PDF service hosts are resolvable.
 
 ---
 
-## 11) Migrations added for risk normalization and evolution tracking
+## 16) Key schema migrations
 
-The schema for normalized findings/risk snapshots is introduced by:
+Notable migrations for findings/risk/evolution/reporting include:
 
 - `targets/migrations/0004_finding_risksnapshot_findinginstance.py`
 - `targets/migrations/0005_scancomparison.py`
+- `targets/migrations/0006_report.py`
 
 Apply with:
 
@@ -269,148 +372,46 @@ python manage.py migrate
 
 ---
 
-## 12) Known limits (current scope)
+## 17) Existing automated coverage
 
-- API scan flow is placeholder
-- Risk score is weighted counts (triage signal), not exploitability scoring
+Current tests include:
 
----
+- setup gating behavior,
+- login and role restrictions,
+- adding/testing external zap node connectivity (mocked),
+- scan lifecycle orchestration with mocked ZAP client,
+- evolution diff (`new/resolved/risk_delta`) checks.
 
-## 13) Suggested next steps
+Run with:
 
-- add stateful finding status (open/accepted/fixed/false-positive)
-- add suppression rules
-- add tests for normalization idempotency and snapshot math
-
-
-## Reporting and exports
-
-Completed scans now generate a persisted `Report` with three downloadable formats:
-
-- HTML report (human-readable)
-- JSON export (structured findings data)
-- PDF report (rendered through internal PDF service)
-
-### Generation flow
-
-At scan completion (`targets.tasks.start_scan_job`):
-
-1. Build report payload with summary, risk score, severity breakdown, detailed findings, and instances.
-2. Render HTML template (`targets/templates/targets/report_scan.html`).
-3. Serialize JSON export.
-4. Send HTML to PDF service (`POST /render` on `PDF_SERVICE_URL`) and store returned PDF bytes.
-5. Save all three files in media storage and create/update `targets.Report`.
-
-### Storage locations
-
-Reports are stored under `MEDIA_ROOT` using:
-
-- `reports/html/scan-<id>.html`
-- `reports/json/scan-<id>.json`
-- `reports/pdf/scan-<id>.pdf`
-
-### UI routes
-
-- Scan detail downloads:
-  - `/scans/<id>/report/html`
-  - `/scans/<id>/report/json`
-  - `/scans/<id>/report/pdf`
-- Reports index:
-  - `/reports`
-
-### PDF troubleshooting
-
-- Ensure PDF container is healthy and reachable from web/worker:
-  - `PDF_SERVICE_URL` defaults to `http://pdf:8092`
-- Check logs:
-  - `docker compose logs pdf`
-- If wkhtmltopdf reports conversion errors, validate HTML and options payload.
-
-## Operations handbook (expanded)
-
-### Deep health tests
-
-Use `/ops/overview` to run and review deep health checks:
-
-- **DB query test**: runs `SELECT 1` against integrated or configured external PostgreSQL.
-- **Redis ping**: verifies broker/cache connectivity.
-- **PDF render test**: posts sample HTML to the PDF service and validates PDF response.
-- **ZAP node tests** (per enabled node):
-  - version endpoint check
-  - API key validation behavior check
-  - trivial safe API call (`numberOfAlerts`) without triggering scans
-
-### ZAP pool controls and node/container mapping
-
-From `/ops/overview`:
-
-- View and apply desired internal ZAP pool size.
-- View running internal ZAP containers discovered from compose.
-- See mapping between `ZapNode` records and container names.
-
-### Rebuild/redeploy/restart and logs
-
-From `/ops/actions` and `/ops/logs/<service>`:
-
-- rebuild selected services
-- redeploy selected services
-- restart a single service
-- view logs by service
-
-All mutable operations require admin access and password re-auth.
-
-### Security model for ops
-
-- **Admin-only** access for operations pages/actions.
-- **Re-auth required** for operations actions.
-- **Audit logging** for ops actions including user, action, target, timestamp, and result.
+```bash
+DJANGO_DB_ENGINE=sqlite python manage.py test
+```
 
 ---
 
-## Secure deployment practices
+## 18) Known limitations
 
-### Network isolation
-
-- Place the deployment behind a **VPN** and expose UI only to trusted operators.
-- Apply **IP allowlists** at firewall / reverse proxy / ingress level.
-- Prefer private network access for DB/Redis/ZAP/PDF services.
-
-### Secrets and authentication
-
-- Rotate `OPS_AGENT_TOKEN` and admin credentials regularly.
-- Keep API keys out of logs and screenshots.
-- Store secrets in environment/secret manager, not in VCS.
-
-### TLS and boundary hardening
-
-- Enforce HTTPS with trusted certificates.
-- Use strict host allowlists (`DJANGO_ALLOWED_HOSTS`).
-- Disable public exposure of internal compose and docker control paths.
+- `api_scan` path is a placeholder and intentionally returns not implemented behavior.
+- risk score is weighted-count based and not a full exploitability framework.
+- finding workflow states (accepted/fixed/false-positive) are not yet first-class domain state.
 
 ---
 
-## Disaster recovery and backup
+## 19) Recommended next steps
 
-### Backup scope
+- add finding lifecycle states and suppression workflows,
+- add policy-driven SLAs and compliance reporting,
+- enrich risk model with asset criticality and CVSS-like dimensions,
+- expand automated tests for normalization idempotency and comparison invariants,
+- add workload/performance tests for async orchestration.
 
-Back up at minimum:
+---
 
-- PostgreSQL database (schema + data)
-- Uploaded reports/artifacts volume
-- Environment/configuration files
-- TLS certificates and keys
+## 20) Related documentation
 
-### Suggested cadence
-
-- Daily full DB backup + frequent incremental/WAL archiving.
-- Keep at least one offsite/off-cluster encrypted copy.
-- Periodically verify restore integrity in a staging environment.
-
-### Restore checklist
-
-1. Provision clean stack and matching app version.
-2. Restore configuration and secrets.
-3. Restore DB and artifacts.
-4. Run migrations and integrity checks.
-5. Validate ops health checks and scan workflows.
-6. Re-enable external traffic after verification.
+- Root onboarding and operator manual: `README.md`
+- System architecture: `docs/architecture.md`
+- Security model and hardening: `docs/security.md`
+- Operations runbook: `docs/operations.md`
+- Endpoint inventory: `docs/api.md`

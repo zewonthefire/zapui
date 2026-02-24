@@ -1,35 +1,70 @@
-# Nginx Runtime Directory
+# Nginx Runtime
 
-This directory contains runtime state and startup logic used by the `nginx` service.
+This directory stores runtime assets used by the `nginx` service in ZapUI.
 
-## Layout
+---
 
-- `scripts/entrypoint.sh`: Generates nginx config dynamically and creates temporary TLS material if needed.
-- `conf.d/`: Host-mounted destination for generated nginx config (`default.conf`).
-- `state/`: Setup lifecycle state (notably the `setup_complete` flag file).
+## Purpose
 
-## Behavior controlled by `state/setup_complete`
+Nginx provides:
 
-- If `state/setup_complete` exists:
-  - HTTP (`:8080`) redirects to HTTPS.
-  - HTTPS (`:8443`) proxies to Django.
-- If it does not exist:
-  - HTTP and HTTPS both proxy to Django to allow first-run setup over HTTP.
+- HTTP/HTTPS ingress,
+- TLS termination,
+- request proxying to Django,
+- setup-phase routing behavior,
+- static/media path serving.
 
-## Certificates
+---
 
-The nginx entrypoint expects:
+## Directory layout
 
-- `/certs/fullchain.pem`
-- `/certs/privkey.pem`
+- `scripts/entrypoint.sh`
+  - generates runtime `default.conf`,
+  - ensures cert material exists (temporary fallback generation when missing),
+  - controls setup-complete routing mode.
+- `conf.d/`
+  - generated nginx configuration output.
+- `state/`
+  - runtime state flags, including setup completion marker.
 
-If either file is missing, a temporary self-signed certificate is generated so nginx can start.
+---
 
-## Static and media
+## Setup completion behavior
 
-The generated config exposes:
+`state/setup_complete` controls HTTP behavior:
 
-- `/static/` from `/static/`
-- `/media/` from `/media/`
+- present: HTTP requests redirect to HTTPS,
+- absent: HTTP and HTTPS both proxy to app (to allow first-run setup path).
 
-These are backed by compose volumes shared with the web container.
+This behavior aligns ingress policy with application setup state.
+
+---
+
+## Certificate behavior
+
+Expected certificate files:
+
+- `certs/fullchain.pem`
+- `certs/privkey.pem`
+
+If missing, nginx startup creates temporary self-signed certs to keep service bootable.
+Production environments must replace these with trusted certificates.
+
+---
+
+## Static and media exposure
+
+Nginx serves:
+
+- `/static/` from shared static volume,
+- `/media/` from shared media volume.
+
+These locations are mounted from application-generated assets.
+
+---
+
+## Troubleshooting
+
+- if HTTPS fails, verify cert files and permissions,
+- if setup redirects are wrong, verify `state/setup_complete`,
+- inspect logs with `docker compose logs nginx`.

@@ -1,13 +1,38 @@
-# Backend Directory
+# Backend
 
-This folder contains the ZapUI backend application source.
+This directory contains the ZapUI backend source code.
 
-## Layout
+## Structure
 
-- `zapcontrol/`: Django project package, app modules, templates, migrations, and backend-specific README.
+- `zapcontrol/`
+  - Django project and app modules,
+  - templates, migrations, task logic,
+  - domain models for scans/findings/risk/evolution/reporting.
 
-## Primary backend doc
+## Responsibilities
 
-For complete backend architecture and model documentation, see:
+The backend handles:
 
-- `backend/zapcontrol/README.md`
+- setup wizard and setup gating,
+- authentication and role-based access,
+- scan orchestration with ZAP nodes,
+- findings normalization and risk scoring,
+- evolution diff computation,
+- report generation and downloads,
+- operations-facing control and audit surfaces.
+
+## Primary backend documentation
+
+- detailed guide: `backend/zapcontrol/README.md`
+- architecture: `docs/architecture.md`
+- operations runbook: `docs/operations.md`
+- endpoint map: `docs/api.md`
+- security model: `docs/security.md`
+
+## Basic validation
+
+From `backend/zapcontrol`:
+
+```bash
+DJANGO_DB_ENGINE=sqlite python manage.py test
+```

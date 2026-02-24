@@ -1,22 +1,40 @@
 # Docker Assets
 
-This directory contains image definitions for the containerized ZapUI stack.
+This directory contains image definitions used by the ZapUI compose stack.
+
+---
 
 ## Subdirectories
 
-- `web/`: Django/Gunicorn image and startup entrypoint.
-- `nginx/`: Nginx image used for reverse proxy and TLS termination.
-- `ops/`: FastAPI Ops Agent image for controlled compose operations.
-- `pdf/`: Placeholder wkhtmltopdf-based service image.
+- `web/` - Django/Gunicorn runtime image used by web/worker/beat services.
+- `nginx/` - nginx ingress image and startup behavior.
+- `pdf/` - internal HTML-to-PDF rendering service.
+- `ops/` - optional privileged operations agent image.
 
-## Build usage
+---
 
-All images are built from the repository root through `docker-compose.yml`, for example:
+## Build model
+
+Dockerfiles live here, but service wiring is defined in root `docker-compose.yml`:
+
+- networks,
+- volume mounts,
+- environment variables,
+- profiles,
+- startup commands,
+- port exposure.
+
+Build from repository root:
 
 ```bash
 docker compose build
 ```
 
-## Operational note
+---
 
-Even though Dockerfiles live here, container wiring, environment variables, ports, mounts, and profiles are defined in the root `docker-compose.yml`.
+## Operational guidance
+
+- treat `ops` image as privileged when profile enabled,
+- keep base images and dependencies updated,
+- rebuild images during upgrades to apply security patches,
+- inspect per-image READMEs for service-specific behavior.
