@@ -442,3 +442,11 @@ All report files are written to the media volume:
   - `docker compose logs pdf`
 - Ensure `PDF_SERVICE_URL` is reachable from `web` and `worker` containers (default `http://pdf:8092`).
 - Inspect invalid HTML or unsupported wkhtmltopdf options when render fails.
+
+## Operations and security handbook
+
+The backend operations handbook is maintained at:
+
+- `backend/zapcontrol/README.md`
+
+It includes deep health tests, ZAP pool controls, rebuild/redeploy workflows, admin re-auth and audit logging expectations, secure deployment practices (VPN/IP allowlist), and disaster recovery/backup guidance.

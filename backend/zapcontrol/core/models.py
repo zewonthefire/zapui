@@ -29,3 +29,27 @@ class SetupState(models.Model):
 
     def __str__(self):
         return f'Setup complete: {self.is_complete}'
+
+
+class OpsAuditLog(models.Model):
+    STATUS_SUCCESS = 'success'
+    STATUS_FAILED = 'failed'
+    STATUS_DENIED = 'denied'
+    STATUS_CHOICES = [
+        (STATUS_SUCCESS, 'Success'),
+        (STATUS_FAILED, 'Failed'),
+        (STATUS_DENIED, 'Denied'),
+    ]
+
+    user = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, blank=True, null=True)
+    action = models.CharField(max_length=120)
+    target = models.CharField(max_length=255, blank=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_SUCCESS)
+    result = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f'{self.created_at:%Y-%m-%d %H:%M:%S} {self.action} ({self.status})'
