@@ -164,3 +164,52 @@ class ZapNodesInternalSyncTests(TestCase):
         legacy = ZapNode.objects.get(name='internal-zap-legacy')
         self.assertFalse(legacy.enabled)
         self.assertEqual(legacy.status, ZapNode.STATUS_DISABLED)
+
+
+class CsrfTrustedOriginSetupTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': False, 'current_step': 1})
+
+    def test_builds_csrf_origin_using_external_host_and_https_port(self):
+        from core.views import _csrf_origin_from_setup_data
+
+        origin = _csrf_origin_from_setup_data(
+            {
+                'external_base_url': 'http://zapui.example.test:8090',
+                'display_https_port': '9443',
+            }
+        )
+
+        self.assertEqual(origin, 'https://zapui.example.test:9443')
+
+    @patch('core.views.OPS_ENABLED', True)
+    @patch('core.views._ops_post')
+    def test_step_one_applies_csrf_origin_via_ops_agent(self, mock_ops_post):
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+        mock_ops_post.return_value = FakeResp()
+
+        response = self.client.post(
+            '/setup',
+            {
+                'step': '1',
+                'action': 'next',
+                'instance_name': 'prod',
+                'external_base_url': 'https://zapui.example.test',
+                'display_http_port': '8090',
+                'display_https_port': '443',
+                'database_mode': 'integrated',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Updated DJANGO_CSRF_TRUSTED_ORIGINS to https://zapui.example.test:443 and recreated web/nginx.')
+        mock_ops_post.assert_called_with('/compose/env/upsert-csrf-origin', json={'origin': 'https://zapui.example.test:443'})
+
+        state = SetupState.objects.get(pk=1)
+        self.assertEqual(state.current_step, 2)
+        self.assertEqual(state.wizard_data['instance']['csrf_trusted_origin'], 'https://zapui.example.test:443')
+        self.assertTrue(state.wizard_data['instance']['csrf_trusted_origin_applied'])

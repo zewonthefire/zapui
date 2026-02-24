@@ -34,6 +34,12 @@
         <input name="display_https_port" class="form-control" value="{{ wizard_data.instance.display_https_port|default:default_display_https_port }}">
         <div class="form-text">Informational HTTPS port shown in the UI and setup notes. It does not reconfigure container networking by itself.</div>
       </div>
+      {% if wizard_data.instance.csrf_trusted_origin %}
+        <div class="alert alert-info">
+          CSRF trusted origin target: <code>{{ wizard_data.instance.csrf_trusted_origin }}</code><br>
+          {{ wizard_data.instance.csrf_trusted_origin_note }}
+        </div>
+      {% endif %}
 
       <h3 class="h6 mt-4">Database mode</h3>
       <div class="form-check">
