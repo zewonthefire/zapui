@@ -94,12 +94,10 @@ SESSION_SAVE_EVERY_REQUEST = os.getenv('SESSION_SAVE_EVERY_REQUEST', '1') == '1'
 
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 _secure_cookies = os.getenv('DJANGO_SECURE_COOKIES')
-_setup_complete_flag = Path('/nginx-state/setup_complete').exists()
 if _secure_cookies is None:
-    # Keep setup wizard usable over HTTP on first boot; secure cookies can be forced via DJANGO_SECURE_COOKIES.
-    secure_cookie_default = (not DEBUG) and _setup_complete_flag
-    SESSION_COOKIE_SECURE = secure_cookie_default
-    CSRF_COOKIE_SECURE = secure_cookie_default
+    # Default to non-secure cookies unless explicitly forced, to avoid CSRF breakage during HTTP setup/proxy edge cases.
+    SESSION_COOKIE_SECURE = False
+    CSRF_COOKIE_SECURE = False
 else:
     SESSION_COOKIE_SECURE = _secure_cookies == '1'
     CSRF_COOKIE_SECURE = _secure_cookies == '1'
