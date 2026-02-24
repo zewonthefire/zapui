@@ -53,6 +53,38 @@ upsert_env() {
   fi
 }
 
+upsert_compose_zap_key() {
+  local compose_file="$1"; local value="$2"
+  if [[ ! -f "$compose_file" ]]; then
+    warn "docker-compose.yml not found, skipping compose ZAP_API_KEY sync"
+    return
+  fi
+
+  python3 - "$compose_file" "$value" <<'PY'
+from pathlib import Path
+import sys
+
+compose_path = Path(sys.argv[1])
+api_key = sys.argv[2]
+target = "      ZAP_API_KEY:"
+
+lines = compose_path.read_text().splitlines()
+updated = False
+for idx, line in enumerate(lines):
+    if line.startswith(target):
+        lines[idx] = f'{target} "{api_key}"'
+        updated = True
+        break
+
+if not updated:
+    raise SystemExit("unable to find zap environment ZAP_API_KEY line in docker-compose.yml")
+
+compose_path.write_text("\n".join(lines) + "\n")
+PY
+
+  ok "Synchronized docker-compose.yml ZAP_API_KEY"
+}
+
 random_api_key() {
   if command -v openssl >/dev/null 2>&1; then
     openssl rand -hex 24
@@ -103,10 +135,14 @@ CURRENT_ZAP_API_KEY="$(auto_env_value .env ZAP_API_KEY "")"
 if [[ -z "$CURRENT_ZAP_API_KEY" || "$CURRENT_ZAP_API_KEY" == "change-me-zap-key" ]]; then
   GENERATED_ZAP_API_KEY="$(random_api_key)"
   upsert_env .env ZAP_API_KEY "$GENERATED_ZAP_API_KEY"
+  ACTIVE_ZAP_API_KEY="$GENERATED_ZAP_API_KEY"
   ok "Generated internal ZAP API key and saved to .env"
 else
+  ACTIVE_ZAP_API_KEY="$CURRENT_ZAP_API_KEY"
   ok "Keeping existing internal ZAP API key from .env"
 fi
+
+upsert_compose_zap_key "docker-compose.yml" "$ACTIVE_ZAP_API_KEY"
 
 HTTP_DEFAULT="$(auto_env_value .env PUBLIC_HTTP_PORT "$DEFAULT_HTTP_PORT")"
 HTTPS_DEFAULT="$(auto_env_value .env PUBLIC_HTTPS_PORT "$DEFAULT_HTTPS_PORT")"
