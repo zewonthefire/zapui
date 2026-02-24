@@ -99,8 +99,8 @@ class OpsOverviewResilienceTests(TestCase):
         response = self.client.get('/ops/overview', follow=True)
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Ops agent unavailable: ops down')
-        self.assertContains(response, 'Unable to list internal ZAP containers: ops down')
+        self.assertContains(response, 'Ops agent is unavailable: ops down')
+        self.assertNotContains(response, 'Unable to list internal ZAP containers')
 
 class SetupWizardStepOneDefaultsTests(TestCase):
     def setUp(self):
