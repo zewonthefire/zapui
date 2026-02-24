@@ -1,4 +1,5 @@
 import os
+import secrets
 import subprocess
 import time
 from pathlib import Path
@@ -134,12 +135,15 @@ def _discover_internal_zap_containers() -> list[str]:
 
 def _sync_internal_nodes() -> tuple[int, int]:
     containers = _discover_internal_zap_containers()
+    key_setting = Setting.objects.filter(key='internal_zap_api_key').first()
+    internal_key = str(key_setting.value) if key_setting and key_setting.value else ''
     seen_names: set[str] = set()
     created = 0
     for index, container_name in enumerate(containers, start=1):
         node_name = f'internal-zap-{index}'
         defaults = {
             'base_url': f'http://{container_name}:8090',
+            'api_key': internal_key,
             'managed_type': ZapNode.MANAGED_INTERNAL,
             'docker_container_name': container_name,
             'enabled': True,
@@ -158,6 +162,48 @@ def _sync_internal_nodes() -> tuple[int, int]:
         node.save(update_fields=['enabled', 'status'])
         disabled += 1
     return created, disabled
+
+
+def _default_internal_zap_api_key() -> str:
+    return secrets.token_urlsafe(24)
+
+
+def _ensure_internal_zap_api_key() -> tuple[str, bool, str]:
+    existing = Setting.objects.filter(key='internal_zap_api_key').first()
+    if existing and existing.value:
+        return str(existing.value), True, 'Existing internal ZAP API key reused.'
+
+    api_key = _default_internal_zap_api_key()
+    _save_setting('internal_zap_api_key', api_key)
+
+    if OPS_ENABLED:
+        try:
+            response = _ops_post('/compose/env/upsert-zap-api-key', json={'api_key': api_key})
+            response.raise_for_status()
+            return api_key, True, 'Internal ZAP API key generated and applied to compose.'
+        except Exception as exc:
+            return api_key, False, _friendly_ops_error(exc, 'Unable to apply internal ZAP API key automatically')
+
+    return api_key, False, (
+        'Ops Agent disabled. Run: '
+        f"sed -i '/^ZAP_API_KEY=/d' .env && "
+        f"echo 'ZAP_API_KEY={api_key}' >> .env && "
+        'docker compose up -d --force-recreate zap'
+    )
+
+
+def _ensure_compose_internal_node(api_key: str) -> None:
+    ZapNode.objects.update_or_create(
+        name='internal-zap-compose',
+        defaults={
+            'base_url': 'http://zap:8090',
+            'api_key': api_key,
+            'managed_type': ZapNode.MANAGED_INTERNAL,
+            'docker_container_name': 'zap',
+            'enabled': True,
+            'status': ZapNode.STATUS_UNKNOWN,
+        },
+    )
 
 
 def _strong_password(password: str, user=None):
@@ -455,6 +501,13 @@ def setup(request):
             pool_applied = True
             pool_warning = ''
 
+            internal_api_key, key_applied, key_note = _ensure_internal_zap_api_key()
+            _ensure_compose_internal_node(internal_api_key)
+            if key_applied:
+                messages.success(request, key_note)
+            else:
+                messages.warning(request, key_note)
+
             if OPS_ENABLED:
                 try:
                     response = _ops_post('/compose/scale', json={'service': 'zap', 'replicas': pool_size})
@@ -488,6 +541,8 @@ def setup(request):
                 'pool_size': pool_size,
                 'external_enabled': add_external,
                 'external_url': external_url,
+                'internal_api_key': internal_api_key,
+                'internal_api_key_note': key_note,
             }
             _save_setting('zap', data['zap'])
             state.pool_applied = pool_applied
