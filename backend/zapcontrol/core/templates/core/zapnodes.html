@@ -40,12 +40,13 @@
   <div class="card-header">Registered nodes</div>
   <div class="table-responsive">
     <table class="table mb-0">
-      <thead><tr><th>Name</th><th>Base URL</th><th>Type</th><th>Status</th><th>Latency</th><th>Last check</th><th>Actions</th></tr></thead>
+      <thead><tr><th>Name</th><th>Base URL</th><th>API key</th><th>Type</th><th>Status</th><th>Latency</th><th>Last check</th><th>Actions</th></tr></thead>
       <tbody>
       {% for node in nodes %}
         <tr>
           <td>{{ node.name }}</td>
           <td>{{ node.base_url }}</td>
+          <td>{% if node.api_key %}<code>{{ node.api_key }}</code>{% else %}<span class="text-muted">-</span>{% endif %}</td>
           <td>{{ node.managed_type }}</td>
           <td>{{ node.status }}</td>
           <td>{% if node.last_latency_ms %}{{ node.last_latency_ms }} ms{% else %}-{% endif %}</td>
@@ -70,7 +71,7 @@
           </td>
         </tr>
       {% empty %}
-        <tr><td colspan="7" class="text-muted">No nodes configured.</td></tr>
+        <tr><td colspan="8" class="text-muted">No nodes configured.</td></tr>
       {% endfor %}
       </tbody>
     </table>

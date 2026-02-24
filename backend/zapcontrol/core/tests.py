@@ -143,6 +143,8 @@ class ZapNodesInternalSyncTests(TestCase):
     @patch('core.views._discover_internal_zap_containers')
     def test_zapnodes_get_syncs_internal_nodes_and_shows_counts(self, mock_discover):
         mock_discover.return_value = ['zapui-zap-1']
+        from core.models import Setting
+        Setting.objects.update_or_create(key='internal_zap_api_key', defaults={'value': 'internal-key'})
         ZapNode.objects.create(
             name='internal-zap-legacy',
             base_url='http://old-zap:8090',
@@ -160,6 +162,7 @@ class ZapNodesInternalSyncTests(TestCase):
 
         node = ZapNode.objects.get(name='internal-zap-1')
         self.assertEqual(node.docker_container_name, 'zapui-zap-1')
+        self.assertEqual(node.api_key, 'internal-key')
 
         legacy = ZapNode.objects.get(name='internal-zap-legacy')
         self.assertFalse(legacy.enabled)
@@ -213,3 +216,41 @@ class CsrfTrustedOriginSetupTests(TestCase):
         self.assertEqual(state.current_step, 2)
         self.assertEqual(state.wizard_data['instance']['csrf_trusted_origin'], 'https://zapui.example.test:443')
         self.assertTrue(state.wizard_data['instance']['csrf_trusted_origin_applied'])
+
+
+class SetupWizardZapKeyTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': False, 'current_step': 4})
+
+    @patch('core.views.OPS_ENABLED', True)
+    @patch('core.views._ops_post')
+    def test_step_four_generates_internal_key_and_registers_compose_node(self, mock_ops_post):
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+        mock_ops_post.return_value = FakeResp()
+
+        response = self.client.post(
+            '/setup',
+            {
+                'step': '4',
+                'action': 'next',
+                'zap_pool_size': '1',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Internal ZAP API key generated and applied to compose.')
+
+        internal_node = ZapNode.objects.get(name='internal-zap-compose')
+        self.assertEqual(internal_node.base_url, 'http://zap:8090')
+        self.assertTrue(internal_node.api_key)
+
+        state = SetupState.objects.get(pk=1)
+        self.assertEqual(state.current_step, 5)
+        self.assertEqual(state.wizard_data['zap']['internal_api_key'], internal_node.api_key)
+
+        self.assertEqual(mock_ops_post.call_args_list[0].args[0], '/compose/env/upsert-zap-api-key')
+        self.assertEqual(mock_ops_post.call_args_list[1].args[0], '/compose/scale')
