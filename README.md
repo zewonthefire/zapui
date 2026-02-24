@@ -1,2 +1,180 @@
-# zapui
-A simple web ui for Zed Attack Proxy (ZAPROXY)
+# ZapUI Skeleton: Dockerized ZAP Control Center Bootstrap
+
+This repository now provides an **initial skeleton** for a future ZAP Control Center UI focused on:
+
+- Projects
+- Targets
+- Scans
+- Findings
+- Risk scoring
+- Evolution/trending
+
+> This is intentionally only the baseline infrastructure + minimal backend wiring. Wizard, domain models, and scan workflows are not implemented yet.
+
+## What this skeleton includes
+
+- Single `docker-compose.yml` at repo root
+- Nginx reverse proxy with HTTP + HTTPS
+- Temporary TLS generation on boot if certs are missing
+- Minimal Django app (`backend/zapcontrol`) behind Gunicorn
+- Celery worker + beat placeholders
+- PostgreSQL + Redis
+- Internal-only OWASP ZAP daemon (`zaproxy/zap-stable`) on the compose network
+- Placeholder PDF container (`wkhtmltopdf` image-based)
+- Placeholder Ops Agent container (profile-gated, disabled by default)
+- Interactive installer script (`scripts/install.sh`)
+- Operator Makefile targets for lifecycle tasks
+
+## Architecture overview
+
+```text
+Host ports
+  PUBLIC_HTTP_PORT (default 8090)  ---> nginx:8080
+  PUBLIC_HTTPS_PORT (default 443)  ---> nginx:8443
+
+nginx -> web (gunicorn Django)
+web   -> db (PostgreSQL)
+web   -> redis
+web   -> zap:8090 (internal only)
+worker/beat -> redis + db
+```
+
+### Services
+
+- `nginx`: TLS termination and reverse proxy for Django
+- `web`: Django + Gunicorn (includes migrations + collectstatic on startup)
+- `worker`: Celery worker placeholder runtime
+- `beat`: Celery beat placeholder runtime
+- `redis`: broker/cache backend
+- `db`: PostgreSQL database
+- `zap`: OWASP ZAP daemon mode; exposed only inside Docker network
+- `pdf`: placeholder microservice (wkhtmltopdf installed)
+- `ops`: placeholder ops agent (disabled unless profile `ops` is enabled)
+
+## Nginx behavior
+
+Nginx uses file flag `./nginx/state/setup_complete` (mounted at `/nginx-state/setup_complete`).
+
+- If the flag **exists**: HTTP redirects to HTTPS.
+- If the flag is **missing**: HTTP proxies to Django so setup can run on first boot.
+
+HTTPS server is always defined and uses:
+
+- `/certs/fullchain.pem`
+- `/certs/privkey.pem`
+
+If missing, the nginx entrypoint generates a temporary self-signed certificate so startup does not fail.
+
+## Minimal Django endpoints
+
+- `GET /health` -> `{"status":"ok"}`
+- `GET /setup` -> `Wizard not implemented yet`
+- `GET /` -> `Not configured`
+
+## Installation
+
+### Option A: Quick install (interactive)
+
+```bash
+bash scripts/install.sh
+```
+
+The installer prompts for:
+
+- install directory (default `~/zapui`)
+- git repo URL (default `https://github.com/zewonthefire/zapui`)
+- `PUBLIC_HTTP_PORT` (default `8090`)
+- `PUBLIC_HTTPS_PORT` (default `443`)
+- whether to enable Ops Agent (default no)
+
+It then:
+
+1. creates install dir
+2. clones repo if missing, otherwise runs `git pull --ff-only`
+3. creates/updates `.env` from `.env.example`
+4. runs `docker compose build`
+5. runs `docker compose up -d`
+6. prints URLs and next steps
+
+### Option B: Manual install
+
+```bash
+git clone https://github.com/zewonthefire/zapui ~/zapui
+cd ~/zapui
+cp .env.example .env
+mkdir -p certs nginx/state nginx/conf.d
+docker compose up -d --build
+```
+
+## Configuration
+
+All environment values live in `.env`.
+
+Key values:
+
+- `PUBLIC_HTTP_PORT` (default `8090`)
+- `PUBLIC_HTTPS_PORT` (default `443`)
+- `ENABLE_OPS_AGENT` (`no` default)
+- `COMPOSE_PROFILES` (set to `ops` to enable `ops` service)
+- `DJANGO_*` settings
+- `POSTGRES_*` settings
+- `CELERY_*` settings
+
+## Makefile shortcuts
+
+- `make up` - start containers
+- `make down` - stop containers
+- `make logs` - stream logs
+- `make migrate` - run Django migrations in `web`
+- `make collectstatic` - collect static assets in `web`
+- `make rebuild` - build + start
+
+## Security notes
+
+- First-run HTTP is intentionally available for setup flow bootstrapping.
+- Add `nginx/state/setup_complete` once setup is done to force HTTP->HTTPS redirect.
+- Replace temporary certs with trusted certificates in `./certs`.
+- ZAP API is internal-only by default (no host port binding).
+- Ops Agent is disabled by default because agent capabilities can expand operational blast radius if compromised.
+
+## Troubleshooting
+
+### Services won’t boot
+
+```bash
+docker compose ps
+docker compose logs --tail=200 nginx web db redis zap
+```
+
+### Health check test
+
+```bash
+curl -i http://localhost:8090/health
+```
+
+### Verify ZAP internal connectivity from web container
+
+```bash
+docker compose exec web python - <<'PY'
+import requests
+print(requests.get('http://zap:8090').status_code)
+PY
+```
+
+### HTTPS certificate warnings
+
+A browser warning is expected with the temporary self-signed certificate. Replace cert files in `./certs` with your own cert/key pair.
+
+---
+
+## Current scope / non-goals
+
+This skeleton does **not** implement:
+
+- full setup wizard logic
+- project/target/scan domain models
+- scan orchestration
+- finding normalization and risk scoring
+- reporting pipeline
+
+Those are intentionally deferred for later iterations.
