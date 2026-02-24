@@ -1,13 +1,5 @@
 # ZapControl Backend Guide
 
-
-## Documentation Changelog
-- Date: 2026-02-24
-- Added: Code-verified operational details, commands, and cross-links.
-- Clarified: Security posture, runtime behavior, and service boundaries.
-- Deprecated: None in this pass.
-- Appendix: N/A (no original content removed).
-
 This guide documents the Django backend in `backend/zapcontrol` in depth.
 It is intended for engineers who operate, extend, or troubleshoot ZapUI.
 
@@ -423,26 +415,3 @@ DJANGO_DB_ENGINE=sqlite python manage.py test
 - Security model and hardening: `docs/security.md`
 - Operations runbook: `docs/operations.md`
 - Endpoint inventory: `docs/api.md`
-
----
-
-## 2026 Documentation Enrichment
-
-### Code-verified quick commands
-```bash
-# Validate compose configuration
-docker compose config
-
-# Show running services
-docker compose ps
-
-# Tail main application logs
-docker compose logs -f --tail=200 web worker beat nginx
-```
-
-### Related docs
-- Root entrypoint: `README.md`
-- Canonical runtime facts: `docs/CODE_REALITY.md`
-- Validation checklist: `docs/DOCS_QA_CHECKLIST.md`
-
-No original content removed in this file.

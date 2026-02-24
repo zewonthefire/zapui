@@ -1,13 +1,5 @@
 # API and Endpoint Reference
 
-
-## Documentation Changelog
-- Date: 2026-02-24
-- Added: Code-verified operational details, commands, and cross-links.
-- Clarified: Security posture, runtime behavior, and service boundaries.
-- Deprecated: None in this pass.
-- Appendix: N/A (no original content removed).
-
 This document lists key user-facing and integration-facing endpoints used by ZapUI.
 
 ---
@@ -105,39 +97,3 @@ Authentication uses `X-OPS-TOKEN`.
 - Most endpoints are UI-oriented and session-authenticated.
 - Public unauthenticated routes are intentionally minimal.
 - Route behavior can be setup-gated until initialization completes.
-
----
-
-## 2026 Documentation Enrichment
-
-### Code-verified quick commands
-```bash
-# Validate compose configuration
-docker compose config
-
-# Show running services
-docker compose ps
-
-# Tail main application logs
-docker compose logs -f --tail=200 web worker beat nginx
-```
-
-### Related docs
-- Root entrypoint: `README.md`
-- Canonical runtime facts: `docs/CODE_REALITY.md`
-- Validation checklist: `docs/DOCS_QA_CHECKLIST.md`
-
-No original content removed in this file.
-
-## API Quick Probe Commands
-```bash
-curl -f http://localhost:${PUBLIC_HTTP_PORT:-8090}/health
-curl -f http://localhost:${PUBLIC_HTTP_PORT:-8090}/api/version
-
-# Ops API (only when ops profile enabled)
-curl -H "X-OPS-TOKEN: ${OPS_AGENT_TOKEN}" http://localhost:8091/compose/services
-```
-
-## Notes
-- Application endpoints require auth except health/version/setup routing paths.
-- Ops endpoints additionally require token and `ENABLE_OPS_AGENT=true`.
