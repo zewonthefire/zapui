@@ -186,7 +186,10 @@ def _ensure_internal_zap_api_key() -> tuple[str, bool, str]:
                 return api_key, True, 'Internal ZAP API key generated and applied to compose.'
             return api_key, True, 'Existing internal ZAP API key reapplied to compose.'
         except Exception as exc:
-            return api_key, False, _friendly_ops_error(exc, 'Unable to apply internal ZAP API key automatically')
+            base_hint = _friendly_ops_error(exc, 'Unable to re-apply internal ZAP API key automatically')
+            if not created:
+                return api_key, False, f'{base_hint} Existing key is kept; setup can continue if internal ZAP is reachable.'
+            return api_key, False, base_hint
 
     return api_key, False, (
         'Ops Agent disabled. Run: '
@@ -406,6 +409,7 @@ def _restart_zap_after_setup() -> tuple[bool, str]:
 def _internal_zap_started_state() -> tuple[bool, str]:
     if not OPS_ENABLED:
         return True, 'Ops Agent disabled: unable to live-check internal ZAP state.'
+    ops_error_hint = ''
     try:
         response = _ops_get('/compose/services')
         response.raise_for_status()
@@ -417,9 +421,19 @@ def _internal_zap_started_state() -> tuple[bool, str]:
             if state == 'running':
                 return True, f"state={row.get('State', 'running')}"
             return False, f"state={row.get('State', 'unknown')}"
-        return False, 'zap service not found in compose services list.'
+        ops_error_hint = 'zap service not found in compose services list.'
     except Exception as exc:
-        return False, _friendly_ops_error(exc, 'Unable to read internal ZAP service status')
+        ops_error_hint = _friendly_ops_error(exc, 'Unable to read internal ZAP service status')
+
+    internal_nodes = ZapNode.objects.filter(enabled=True, managed_type=ZapNode.MANAGED_INTERNAL)
+    for node in internal_nodes:
+        try:
+            _test_node_connectivity(node)
+            return True, f'fallback node connectivity ok ({node.name})'
+        except Exception:
+            continue
+
+    return False, ops_error_hint
 
 
 def setup_zap_status(request):
@@ -947,15 +961,7 @@ def _deep_zap_check(node: ZapNode) -> dict[str, str]:
         alerts_response.raise_for_status()
         alerts_count = alerts_response.json().get('numberOfAlerts', 'n/a')
 
-        if node.api_key:
-            bad_key = requests.get(
-                f'{base}/JSON/core/view/version/',
-                params={'apikey': '__invalid_key__'},
-                timeout=10,
-            )
-            api_key_hint = 'validated' if bad_key.status_code >= 400 else 'key enforcement not detected'
-        else:
-            api_key_hint = 'not configured'
+        api_key_hint = 'configured' if node.api_key else 'not configured'
 
         return {
             'name': f'ZAP node {node.name}',
