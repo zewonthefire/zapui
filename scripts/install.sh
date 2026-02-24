@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-DEFAULT_INSTALL_DIR="${HOME}/zapui"
+DEFAULT_INSTALL_DIR="${HOME}/projects/zapui"
 DEFAULT_REPO_URL="https://github.com/zewonthefire/zapui"
 DEFAULT_HTTP_PORT="8090"
 DEFAULT_HTTPS_PORT="443"
