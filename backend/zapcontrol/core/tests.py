@@ -79,3 +79,30 @@ class LoginAndRolesTests(TestCase):
         self.assertContains(test_response, 'healthy (version 2.15.0')
         node.refresh_from_db()
         self.assertEqual(node.status, ZapNode.STATUS_HEALTHY)
+
+
+class SetupWizardStepOneDefaultsTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': False, 'current_step': 1})
+
+    def test_prefills_external_base_url_and_display_port_from_request_host(self):
+        response = self.client.get('/setup', SERVER_NAME='zapui.example.test', SERVER_PORT='8088')
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'value="http://zapui.example.test:8088"')
+        self.assertContains(response, 'value="8088"')
+
+    def test_existing_wizard_values_override_prefilled_defaults(self):
+        state = SetupState.objects.get(pk=1)
+        state.wizard_data = {
+            'instance': {
+                'external_base_url': 'https://configured.example.com',
+                'display_http_port': '9443',
+            }
+        }
+        state.save(update_fields=['wizard_data'])
+
+        response = self.client.get('/setup', SERVER_NAME='zapui.example.test', SERVER_PORT='8088')
+
+        self.assertContains(response, 'value="https://configured.example.com"')
+        self.assertContains(response, 'value="9443"')

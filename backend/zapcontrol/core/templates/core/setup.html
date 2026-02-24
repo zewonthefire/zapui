@@ -19,8 +19,16 @@
     {% if step == 1 %}
       <h2 class="h5">1) Instance settings + Database</h2>
       <div class="mb-3"><label class="form-label">Instance name</label><input name="instance_name" class="form-control" value="{{ wizard_data.instance.instance_name|default:'' }}" required></div>
-      <div class="mb-3"><label class="form-label">External base URL</label><input name="external_base_url" class="form-control" placeholder="http://host:8080" value="{{ wizard_data.instance.external_base_url|default:'' }}" required></div>
-      <div class="mb-3"><label class="form-label">Display HTTP port (reference only)</label><input name="display_http_port" class="form-control" value="{{ wizard_data.instance.display_http_port|default:'8080' }}"></div>
+      <div class="mb-3">
+        <label class="form-label">External base URL</label>
+        <input name="external_base_url" class="form-control" placeholder="http://host:8080" value="{{ wizard_data.instance.external_base_url|default:default_external_base_url }}" required>
+        <div class="form-text">Public URL users and integrations will use to reach this instance (for links, redirects, and generated certificates).</div>
+      </div>
+      <div class="mb-3">
+        <label class="form-label">Display HTTP port (reference only)</label>
+        <input name="display_http_port" class="form-control" value="{{ wizard_data.instance.display_http_port|default:default_display_http_port }}">
+        <div class="form-text">Informational port shown in the UI and setup notes. It does not reconfigure container networking by itself.</div>
+      </div>
 
       <h3 class="h6 mt-4">Database mode</h3>
       <div class="form-check">
