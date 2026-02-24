@@ -23,6 +23,7 @@ SAFE_ENV_KEYS = [
     "POSTGRES_PORT",
     "CELERY_BROKER_URL",
     "ENABLE_OPS_AGENT",
+    "ZAP_API_KEY",
 ]
 
 
@@ -37,6 +38,10 @@ class ScalePayload(BaseModel):
 
 class CsrfOriginPayload(BaseModel):
     origin: str
+
+
+class ZapApiKeyPayload(BaseModel):
+    api_key: str
 
 
 def _compose_cmd(*parts: str) -> list[str]:
@@ -187,4 +192,26 @@ def compose_upsert_csrf_origin(payload: CsrfOriginPayload) -> dict[str, Any]:
         "action": "upsert-csrf-origin",
         "origin": origin,
         "services": ["web", "nginx"],
+    }
+
+
+@app.post("/compose/env/upsert-zap-api-key", dependencies=[Depends(_auth)])
+def compose_upsert_zap_api_key(payload: ZapApiKeyPayload) -> dict[str, Any]:
+    api_key = payload.api_key.strip()
+    if not api_key:
+        raise HTTPException(status_code=400, detail="api_key is required")
+    if any(ch in api_key for ch in ("\n", "\r")):
+        raise HTTPException(status_code=400, detail="api_key must be a single line")
+
+    env_file = PROJECT_DIR / ".env"
+    _upsert_env_var(env_file, "ZAP_API_KEY", api_key)
+
+    result = _run_command(_compose_cmd("up", "-d", "--force-recreate", "zap"))
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=result.stderr.strip())
+
+    return {
+        "status": "ok",
+        "action": "upsert-zap-api-key",
+        "services": ["zap"],
     }

@@ -53,6 +53,17 @@ upsert_env() {
   fi
 }
 
+random_api_key() {
+  if command -v openssl >/dev/null 2>&1; then
+    openssl rand -hex 24
+    return
+  fi
+  python3 - <<'PYKEY'
+import secrets
+print(secrets.token_hex(24))
+PYKEY
+}
+
 status "ZapUI installer (idempotent). Safe to run multiple times."
 
 INSTALL_DIR="$(prompt_default "Install directory" "$DEFAULT_INSTALL_DIR")"
@@ -86,6 +97,15 @@ if [[ ! -f .env ]]; then
   ok "Created .env from .env.example"
 else
   ok "Using existing .env"
+fi
+
+CURRENT_ZAP_API_KEY="$(auto_env_value .env ZAP_API_KEY "")"
+if [[ -z "$CURRENT_ZAP_API_KEY" || "$CURRENT_ZAP_API_KEY" == "change-me-zap-key" ]]; then
+  GENERATED_ZAP_API_KEY="$(random_api_key)"
+  upsert_env .env ZAP_API_KEY "$GENERATED_ZAP_API_KEY"
+  ok "Generated internal ZAP API key and saved to .env"
+else
+  ok "Keeping existing internal ZAP API key from .env"
 fi
 
 HTTP_DEFAULT="$(auto_env_value .env PUBLIC_HTTP_PORT "$DEFAULT_HTTP_PORT")"

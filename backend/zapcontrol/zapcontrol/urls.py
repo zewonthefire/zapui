@@ -11,6 +11,7 @@ urlpatterns = [
     path('', include('targets.urls')),
     path('health', views.health, name='health'),
     path('setup', views.setup, name='setup'),
+    path('setup/zap-status', views.setup_zap_status, name='setup-zap-status'),
     path('dashboard', views.dashboard, name='dashboard'),
     path('ops/overview', views.ops_overview, name='ops-overview'),
     path('zapnodes', views.zapnodes, name='zapnodes'),

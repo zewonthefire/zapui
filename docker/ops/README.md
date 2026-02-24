@@ -43,6 +43,7 @@ It is disabled by default and should be treated as high-trust infrastructure.
 - `POST /compose/redeploy`
 - `POST /compose/scale`
 - `GET /compose/env-summary`
+- `POST /compose/env/upsert-zap-api-key`
 
 ---
 
