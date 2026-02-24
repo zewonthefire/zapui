@@ -17,6 +17,7 @@ This repository now provides an **initial skeleton** for a future ZAP Control Ce
 - Nginx reverse proxy with HTTP + HTTPS
 - Temporary TLS generation on boot if certs are missing
 - Minimal Django app (`backend/zapcontrol`) behind Gunicorn
+- Django authentication foundation with a custom user model and role support
 - Celery worker + beat placeholders
 - PostgreSQL + Redis
 - Internal-only OWASP ZAP daemon (`zaproxy/zap-stable`) on the compose network
@@ -65,11 +66,32 @@ HTTPS server is always defined and uses:
 
 If missing, the nginx entrypoint generates a temporary self-signed certificate so startup does not fail.
 
-## Minimal Django endpoints
+## Authentication and role model
+
+The Django foundation now uses a custom user model (`accounts.User`) with email-based login and three built-in roles:
+
+- `admin`
+- `security_engineer`
+- `readonly`
+
+Authentication routes:
+
+- `GET/POST /login`
+- `GET /logout`
+- `GET /dashboard` (requires login)
+
+Admin remains available at `/admin/`.
+
+## Basic navigation and endpoints
+
+UI shell includes a Bootstrap top navigation with links for dashboard, setup placeholder, and API version.
+
+Application/API endpoints currently available:
 
 - `GET /health` -> `{"status":"ok"}`
-- `GET /setup` -> `Wizard not implemented yet`
-- `GET /` -> `Not configured`
+- `GET /setup` -> setup placeholder response (wizard not implemented yet)
+- `GET /dashboard` -> authenticated dashboard shell
+- `GET /api/version` -> `{"name":"zapcontrol","version":"..."}`
 
 ## Installation
 
@@ -78,23 +100,6 @@ If missing, the nginx entrypoint generates a temporary self-signed certificate s
 ```bash
 bash scripts/install.sh
 ```
-
-The installer prompts for:
-
-- install directory (default `~/zapui`)
-- git repo URL (default `https://github.com/zewonthefire/zapui`)
-- `PUBLIC_HTTP_PORT` (default `8090`)
-- `PUBLIC_HTTPS_PORT` (default `443`)
-- whether to enable Ops Agent (default no)
-
-It then:
-
-1. creates install dir
-2. clones repo if missing, otherwise runs `git pull --ff-only`
-3. creates/updates `.env` from `.env.example`
-4. runs `docker compose build`
-5. runs `docker compose up -d`
-6. prints URLs and next steps
 
 ### Option B: Manual install
 
@@ -129,8 +134,32 @@ Key values:
 - `make collectstatic` - collect static assets in `web`
 - `make rebuild` - build + start
 
+## Django admin bootstrap
+
+Create an admin user from the web container:
+
+```bash
+docker compose exec web python manage.py createsuperuser
+```
+
+After creating the account, sign in at `/login` or `/admin/`.
+
+## Migrations workflow in Docker
+
+Use these as the default migration workflow:
+
+```bash
+docker compose exec web python manage.py makemigrations
+docker compose exec web python manage.py migrate
+```
+
+For a fresh bootstrap run, `web` startup already executes migrations automatically, but explicit commands above are recommended when iterating on models.
+
 ## Security notes
 
+- CSRF middleware is enabled.
+- Session and CSRF cookies are configured to be secure in HTTPS environments.
+- Session expiry defaults to 8 hours (`SESSION_COOKIE_AGE`) and can be tuned via env vars.
 - First-run HTTP is intentionally available for setup flow bootstrapping.
 - Add `nginx/state/setup_complete` once setup is done to force HTTP->HTTPS redirect.
 - Replace temporary certs with trusted certificates in `./certs`.
