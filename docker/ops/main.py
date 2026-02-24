@@ -62,6 +62,21 @@ def _upsert_env_var(env_file: Path, key: str, value: str) -> None:
     env_file.write_text("\n".join(filtered) + "\n")
 
 
+def _upsert_compose_zap_api_key(compose_file: Path, api_key: str) -> None:
+    if not compose_file.exists():
+        raise HTTPException(status_code=500, detail="docker-compose.yml not found")
+
+    lines = compose_file.read_text().splitlines()
+    prefix = "      ZAP_API_KEY:"
+    for idx, line in enumerate(lines):
+        if line.startswith(prefix):
+            lines[idx] = f'{prefix} "{api_key}"'
+            compose_file.write_text("\n".join(lines) + "\n")
+            return
+
+    raise HTTPException(status_code=500, detail="ZAP_API_KEY line not found in docker-compose.yml")
+
+
 def _allowed_services() -> set[str]:
     result = _run_command(_compose_cmd("ps", "--all", "--format", "json"))
     if result.returncode != 0:
@@ -204,7 +219,9 @@ def compose_upsert_zap_api_key(payload: ZapApiKeyPayload) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail="api_key must be a single line")
 
     env_file = PROJECT_DIR / ".env"
+    compose_file = PROJECT_DIR / "docker-compose.yml"
     _upsert_env_var(env_file, "ZAP_API_KEY", api_key)
+    _upsert_compose_zap_api_key(compose_file, api_key)
 
     result = _run_command(_compose_cmd("up", "-d", "--force-recreate", "zap"))
     if result.returncode != 0:
