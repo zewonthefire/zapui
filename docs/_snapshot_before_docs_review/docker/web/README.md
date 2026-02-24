@@ -1,13 +1,5 @@
 # Web Image (`docker/web`)
 
-
-## Documentation Changelog
-- Date: 2026-02-24
-- Added: Code-verified operational details, commands, and cross-links.
-- Clarified: Security posture, runtime behavior, and service boundaries.
-- Deprecated: None in this pass.
-- Appendix: N/A (no original content removed).
-
 Container image for the Django application runtime reused by:
 
 - `web` (Gunicorn),
@@ -55,26 +47,3 @@ Celery services override command in compose while reusing the same image and dep
 
 - migration-on-start behavior is convenient for small deployments,
 - for larger environments, evaluate dedicated migration control workflows.
-
----
-
-## 2026 Documentation Enrichment
-
-### Code-verified quick commands
-```bash
-# Validate compose configuration
-docker compose config
-
-# Show running services
-docker compose ps
-
-# Tail main application logs
-docker compose logs -f --tail=200 web worker beat nginx
-```
-
-### Related docs
-- Root entrypoint: `README.md`
-- Canonical runtime facts: `docs/CODE_REALITY.md`
-- Validation checklist: `docs/DOCS_QA_CHECKLIST.md`
-
-No original content removed in this file.

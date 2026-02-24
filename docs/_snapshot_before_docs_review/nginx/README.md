@@ -1,13 +1,5 @@
 # Nginx Runtime
 
-
-## Documentation Changelog
-- Date: 2026-02-24
-- Added: Code-verified operational details, commands, and cross-links.
-- Clarified: Security posture, runtime behavior, and service boundaries.
-- Deprecated: None in this pass.
-- Appendix: N/A (no original content removed).
-
 This directory stores runtime assets used by the `nginx` service in ZapUI.
 
 ---
@@ -76,26 +68,3 @@ These locations are mounted from application-generated assets.
 - if HTTPS fails, verify cert files and permissions,
 - if setup redirects are wrong, verify `state/setup_complete`,
 - inspect logs with `docker compose logs nginx`.
-
----
-
-## 2026 Documentation Enrichment
-
-### Code-verified quick commands
-```bash
-# Validate compose configuration
-docker compose config
-
-# Show running services
-docker compose ps
-
-# Tail main application logs
-docker compose logs -f --tail=200 web worker beat nginx
-```
-
-### Related docs
-- Root entrypoint: `README.md`
-- Canonical runtime facts: `docs/CODE_REALITY.md`
-- Validation checklist: `docs/DOCS_QA_CHECKLIST.md`
-
-No original content removed in this file.

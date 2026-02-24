@@ -1,13 +1,5 @@
 # Scripts
 
-
-## Documentation Changelog
-- Date: 2026-02-24
-- Added: Code-verified operational details, commands, and cross-links.
-- Clarified: Security posture, runtime behavior, and service boundaries.
-- Deprecated: None in this pass.
-- Appendix: N/A (no original content removed).
-
 Operational scripts for deploying and maintaining ZapUI.
 
 ---
@@ -50,26 +42,3 @@ bash scripts/install.sh
 - Ops Agent enablement is explicitly prompted with a warning because it is privileged.
 - Script checks for `git` and `docker` availability before continuing.
 - Existing `.env` values are upserted rather than blindly overwritten.
-
----
-
-## 2026 Documentation Enrichment
-
-### Code-verified quick commands
-```bash
-# Validate compose configuration
-docker compose config
-
-# Show running services
-docker compose ps
-
-# Tail main application logs
-docker compose logs -f --tail=200 web worker beat nginx
-```
-
-### Related docs
-- Root entrypoint: `README.md`
-- Canonical runtime facts: `docs/CODE_REALITY.md`
-- Validation checklist: `docs/DOCS_QA_CHECKLIST.md`
-
-No original content removed in this file.
