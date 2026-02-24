@@ -62,15 +62,16 @@ def _upsert_env_var(env_file: Path, key: str, value: str) -> None:
     env_file.write_text("\n".join(filtered) + "\n")
 
 
-def _upsert_compose_zap_api_key(compose_file: Path, api_key: str) -> None:
+def _upsert_compose_zap_api_key(compose_file: Path, _api_key: str) -> None:
     if not compose_file.exists():
         raise HTTPException(status_code=500, detail="docker-compose.yml not found")
 
     lines = compose_file.read_text().splitlines()
     prefix = "      ZAP_API_KEY:"
+    desired = "      ZAP_API_KEY: ${ZAP_API_KEY:-change-me-zap-key}"
     for idx, line in enumerate(lines):
         if line.startswith(prefix):
-            lines[idx] = f'{prefix} "{api_key}"'
+            lines[idx] = desired
             compose_file.write_text("\n".join(lines) + "\n")
             return
 
