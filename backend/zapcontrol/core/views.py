@@ -402,6 +402,31 @@ def _restart_zap_after_setup() -> tuple[bool, str]:
 
     return False, 'Ops Agent disabled. Run: docker compose restart zap'
 
+
+def _internal_zap_started_state() -> tuple[bool, str]:
+    if not OPS_ENABLED:
+        return True, 'Ops Agent disabled: unable to live-check internal ZAP state.'
+    try:
+        response = _ops_get('/compose/services')
+        response.raise_for_status()
+        services = response.json().get('services', [])
+        for row in services:
+            if row.get('Service') != 'zap':
+                continue
+            state = str(row.get('State', '')).lower()
+            if state == 'running':
+                return True, f"state={row.get('State', 'running')}"
+            return False, f"state={row.get('State', 'unknown')}"
+        return False, 'zap service not found in compose services list.'
+    except Exception as exc:
+        return False, _friendly_ops_error(exc, 'Unable to read internal ZAP service status')
+
+
+def setup_zap_status(request):
+    started, hint = _internal_zap_started_state()
+    return JsonResponse({'started': started, 'hint': hint})
+
+
 def health(request):
     return JsonResponse({'status': 'ok'})
 
@@ -564,6 +589,15 @@ def setup(request):
             state.current_step = 5
 
         elif step == 5 and action == 'finalize':
+            zap_started, zap_hint = _internal_zap_started_state()
+            if not zap_started:
+                messages.error(request, f'Finalize blocked: internal ZAP is not started ({zap_hint})')
+                state.current_step = 5
+                data['zap_live_status'] = {'started': False, 'hint': zap_hint}
+                state.wizard_data = data
+                state.save()
+                return redirect('setup')
+
             checks = connectivity_checks(data.get('database', {}))
             cert_ok, cert_hint = _validate_existing_certs()
             checks.append({'name': 'TLS cert files', 'status': 'ok' if cert_ok else 'failed', 'hint': cert_hint})
@@ -611,10 +645,14 @@ def setup(request):
 
     default_external_base_url, default_display_http_port, default_display_https_port = _wizard_step1_defaults(request)
 
+    zap_started, zap_hint = _internal_zap_started_state() if step == 5 else (True, '')
+
     context = {
         'state': state,
         'step': step,
         'wizard_data': state.wizard_data or {},
+        'zap_started': zap_started,
+        'zap_status_hint': zap_hint,
         'checks': connectivity_checks((state.wizard_data or {}).get('database', {})) if step == 5 else [],
         'ops_enabled': OPS_ENABLED,
         'default_external_base_url': default_external_base_url,

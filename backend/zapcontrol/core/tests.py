@@ -270,9 +270,10 @@ class SetupWizardFinalizeRestartTests(TestCase):
 
     @patch('core.views._validate_existing_certs', return_value=(True, 'ok cert'))
     @patch('core.views.connectivity_checks', return_value=[])
+    @patch('core.views._internal_zap_started_state', return_value=(True, 'state=running'))
     @patch('core.views.OPS_ENABLED', True)
     @patch('core.views._ops_post')
-    def test_finalize_restarts_zap_container(self, mock_ops_post, _mock_checks, _mock_certs):
+    def test_finalize_restarts_zap_container(self, mock_ops_post, _ops_state, _mock_checks, _mock_certs):
         class FakeResp:
             def raise_for_status(self):
                 return None
@@ -295,3 +296,58 @@ class SetupWizardFinalizeRestartTests(TestCase):
         self.assertTrue(state.is_complete)
         self.assertEqual(state.wizard_data['zap_restart_after_setup']['applied'], True)
         self.assertEqual(mock_ops_post.call_args.args[0], '/compose/restart/zap')
+
+
+class SetupWizardZapLiveStatusTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(
+            pk=1,
+            defaults={
+                'is_complete': False,
+                'current_step': 5,
+                'wizard_data': {'database': {'mode': 'integrated'}, 'instance': {'external_base_url': 'http://zapui.example.test:8090'}},
+            },
+        )
+
+    @patch('core.views.OPS_ENABLED', True)
+    @patch('core.views._ops_get')
+    def test_setup_zap_status_endpoint_returns_started(self, mock_ops_get):
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {'services': [{'Service': 'zap', 'State': 'running'}]}
+
+        mock_ops_get.return_value = FakeResp()
+
+        response = self.client.get('/setup/zap-status')
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json()['started'], True)
+
+    @patch('core.views.OPS_ENABLED', True)
+    @patch('core.views._ops_get')
+    def test_finalize_is_blocked_when_zap_not_started(self, mock_ops_get):
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+            def json(self):
+                return {'services': [{'Service': 'zap', 'State': 'created'}]}
+
+        mock_ops_get.return_value = FakeResp()
+
+        response = self.client.post(
+            '/setup',
+            {
+                'step': '5',
+                'action': 'finalize',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Finalize blocked: internal ZAP is not started')
+
+        state = SetupState.objects.get(pk=1)
+        self.assertFalse(state.is_complete)
