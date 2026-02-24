@@ -142,7 +142,7 @@ Rebuild and redeploy `web` from UI:
 
 Read-only mode when disabled:
 
-- `/ops/overview` still shows DB/Redis/ZAP connectivity tests.
+- `/ops/overview` still shows DB/Redis/ZAP connectivity tests and node inventory.
 - Action pages display clear enablement instructions.
 
 
@@ -155,7 +155,7 @@ Steps:
 1. **Instance settings + database**: instance name, external base URL, display HTTP port reference, and database mode (integrated by default or external PostgreSQL with connectivity test).
 2. **First admin user**: creates the initial admin account with strong password validation.
 3. **TLS**: either generate a self-signed cert with SANs (`localhost`, `127.0.0.1`, external hostname) or validate an existing cert/key pair in `./certs`.
-4. **ZAP configuration**: choose ZAP pool size (default `1`), keep internal ZAP enabled, and optionally register/test one external ZAP node.
+4. **ZAP configuration**: choose desired internal pool size (default `1`), optionally register one external ZAP node, and run connectivity checks.
 5. **Finalize**: run health checks (including DB mode-specific connectivity), write `nginx/state/setup_complete`, and display the final HTTPS URL.
 
 After finalization, nginx redirects all HTTP traffic to HTTPS on restart because the setup flag exists.
@@ -167,11 +167,28 @@ After finalization, nginx redirects all HTTP traffic to HTTPS on restart because
 ## ZAP pool size and scaling
 
 - Default pool size is `1` internal `zap` container.
-- If selected pool size is greater than `1`:
-  - **Ops agent enabled**: wizard requests scaling through the ops API.
-  - **Ops agent disabled**: wizard completes but shows a warning with the manual command (`make scale-zap N=<count>`).
+- `/ops/overview` can scale up or down using one compose stack only (no extra compose files).
+- Shrinking the pool disables stale internal ZapNode records instead of hard-deleting them.
+- If Ops Agent is disabled, use manual command `make scale-zap N=<count>`.
 
-Ops agent matters because compose scaling is a privileged operation; when disabled, the platform intentionally requires an operator to run the scale command manually.
+## ZapNode management
+
+- Open `/zapnodes` as an admin user to manage node inventory.
+- **External nodes**:
+  - Add with `name`, `base_url`, and optional `api_key`.
+  - Use **Test** (per-node) or **Test all nodes** to call `/JSON/core/view/version/` and store status, latency, and timestamp.
+  - Remove external nodes directly from the UI.
+- **Internal managed nodes**:
+  - Created automatically when internal pool scaling is applied.
+  - Node records keep `docker_container_name` and internal service URL (`http://<container_name>:8090`).
+  - When pool is reduced, missing containers are retained as disabled records for history/audit.
+
+## Internal pool scaling (single compose file)
+
+- Use `/ops/overview` (admin only) to set **Desired pool size** and apply.
+- With Ops Agent enabled, ZapUI runs `docker compose up -d --scale zap=N` through the agent API.
+- After scaling, ZapUI discovers running `zap` service containers and syncs `internal_managed` ZapNode records.
+- You can also run **Test all nodes** from `/ops/overview` or `/zapnodes`.
 
 ## Installation
 
@@ -245,6 +262,7 @@ For a fresh bootstrap run, `web` startup already executes migrations automatical
 - Add `nginx/state/setup_complete` once setup is done to force HTTP->HTTPS redirect.
 - Replace temporary certs with trusted certificates in `./certs`.
 - ZAP API is internal-only by default (no host port binding).
+- If you choose to expose ZAP for local debugging, bind to loopback only, for example `127.0.0.1:8090:8090` (never `0.0.0.0`).
 - Ops Agent is disabled by default because agent capabilities can expand operational blast radius if compromised.
 
 ## Troubleshooting

@@ -13,6 +13,29 @@
   {% endif %}
 </div>
 
+<div class="card mb-3">
+  <div class="card-header">Internal ZAP pool (admin)</div>
+  <div class="card-body">
+    <form method="post" class="row g-2 align-items-end">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="scale_internal_pool">
+      <div class="col-md-3">
+        <label class="form-label">Desired pool size</label>
+        <input type="number" min="0" name="desired_pool_size" class="form-control" value="{{ desired_pool_size }}">
+      </div>
+      <div class="col-md-3">
+        <button class="btn btn-primary">Apply scale</button>
+      </div>
+    </form>
+    <form method="post" class="mt-2">
+      {% csrf_token %}
+      <input type="hidden" name="action" value="test_all_nodes">
+      <button class="btn btn-outline-primary btn-sm">Test all nodes</button>
+      <a class="btn btn-outline-secondary btn-sm" href="/zapnodes">Manage nodes</a>
+    </form>
+  </div>
+</div>
+
 <div class="row g-3">
   <div class="col-lg-7">
     <div class="card">
@@ -35,6 +58,19 @@
     </div>
   </div>
   <div class="col-lg-5">
+    <div class="card mb-3">
+      <div class="card-header">ZAP Nodes</div>
+      <ul class="list-group list-group-flush">
+        {% for node in nodes %}
+        <li class="list-group-item d-flex justify-content-between">
+          <span>{{ node.name }} <small class="text-muted">({{ node.managed_type }})</small></span>
+          <span class="badge {% if node.status == 'healthy' %}text-bg-success{% elif node.status == 'unreachable' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ node.status }}</span>
+        </li>
+        {% empty %}
+        <li class="list-group-item text-muted">No ZAP nodes registered.</li>
+        {% endfor %}
+      </ul>
+    </div>
     <div class="card">
       <div class="card-header">Connectivity checks</div>
       <ul class="list-group list-group-flush">
@@ -44,7 +80,7 @@
             <div class="fw-semibold">{{ check.name }}</div>
             <small class="text-muted">{{ check.hint }}</small>
           </div>
-          <span class="badge {% if check.status == 'ok' %}text-bg-success{% else %}text-bg-danger{% endif %}">{{ check.status }}</span>
+          <span class="badge {% if check.status == 'ok' %}text-bg-success{% elif check.status == 'warning' %}text-bg-warning{% else %}text-bg-danger{% endif %}">{{ check.status }}</span>
         </li>
         {% endfor %}
       </ul>

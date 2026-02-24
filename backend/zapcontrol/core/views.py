@@ -1,5 +1,6 @@
 import os
 import subprocess
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -14,6 +15,7 @@ from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import redirect, render
+from django.utils import timezone
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -61,6 +63,73 @@ def _ops_post(path: str, **kwargs):
 
 def _save_setting(key: str, value):
     Setting.objects.update_or_create(key=key, defaults={'value': value})
+
+
+def _node_healthcheck_url(node: ZapNode) -> str:
+    return f"{node.base_url.rstrip('/')}/JSON/core/view/version/"
+
+
+def _test_node_connectivity(node: ZapNode):
+    started = time.perf_counter()
+    params = {'apikey': node.api_key} if node.api_key else None
+    response = requests.get(_node_healthcheck_url(node), params=params, timeout=10)
+    latency_ms = int((time.perf_counter() - started) * 1000)
+    response.raise_for_status()
+    payload = response.json()
+    version = payload.get('version', '')
+
+    node.last_health_check = timezone.now()
+    node.last_latency_ms = latency_ms
+    node.status = ZapNode.STATUS_HEALTHY
+    node.version = version
+    node.save(update_fields=['last_health_check', 'last_latency_ms', 'status', 'version'])
+    return version, latency_ms
+
+
+def _discover_internal_zap_containers() -> list[str]:
+    if not OPS_ENABLED:
+        return []
+    response = _ops_get('/compose/services')
+    response.raise_for_status()
+    containers = []
+    for row in response.json().get('services', []):
+        if row.get('Service') != 'zap':
+            continue
+        state = str(row.get('State', '')).lower()
+        if state != 'running':
+            continue
+        name = row.get('Name')
+        if name:
+            containers.append(name)
+    return sorted(containers)
+
+
+def _sync_internal_nodes() -> tuple[int, int]:
+    containers = _discover_internal_zap_containers()
+    seen_names: set[str] = set()
+    created = 0
+    for index, container_name in enumerate(containers, start=1):
+        node_name = f'internal-zap-{index}'
+        defaults = {
+            'base_url': f'http://{container_name}:8090',
+            'managed_type': ZapNode.MANAGED_INTERNAL,
+            'docker_container_name': container_name,
+            'enabled': True,
+            'status': ZapNode.STATUS_UNKNOWN,
+        }
+        _, was_created = ZapNode.objects.update_or_create(name=node_name, defaults=defaults)
+        if was_created:
+            created += 1
+        seen_names.add(node_name)
+
+    disabled = 0
+    to_disable = ZapNode.objects.filter(managed_type=ZapNode.MANAGED_INTERNAL).exclude(name__in=seen_names)
+    for node in to_disable:
+        node.enabled = False
+        node.status = ZapNode.STATUS_DISABLED
+        node.save(update_fields=['enabled', 'status'])
+        disabled += 1
+    return created, disabled
 
 
 def _strong_password(password: str, user=None):
@@ -293,27 +362,31 @@ def setup(request):
             pool_applied = True
             pool_warning = ''
 
-            if pool_size > 1:
-                if OPS_ENABLED:
-                    try:
-                        response = _ops_post('/compose/scale', json={'service': 'zap', 'replicas': pool_size})
-                        response.raise_for_status()
-                    except Exception as exc:
-                        pool_applied = False
-                        pool_warning = f'Ops scaling failed: {exc}'
-                else:
+            if OPS_ENABLED:
+                try:
+                    response = _ops_post('/compose/scale', json={'service': 'zap', 'replicas': pool_size})
+                    response.raise_for_status()
+                    _sync_internal_nodes()
+                except Exception as exc:
                     pool_applied = False
-                    pool_warning = f'Run: make scale-zap N={pool_size}'
+                    pool_warning = f'Ops scaling failed: {exc}'
+            elif pool_size > 1:
+                pool_applied = False
+                pool_warning = f'Run: make scale-zap N={pool_size}'
 
             if add_external and external_url:
                 try:
-                    test_response = requests.get(external_url, timeout=5)
-                    if test_response.status_code >= 400:
-                        raise ValueError(f'HTTP {test_response.status_code}')
-                    ZapNode.objects.update_or_create(
+                    node, _ = ZapNode.objects.update_or_create(
                         base_url=external_url,
-                        defaults={'api_key': external_key, 'is_active': True, 'is_internal': False},
+                        defaults={
+                            'name': f'external-{external_url.replace("http://", "").replace("https://", "").replace(":", "-").replace("/", "-")[:80]}',
+                            'api_key': external_key,
+                            'enabled': True,
+                            'managed_type': ZapNode.MANAGED_EXTERNAL,
+                            'docker_container_name': None,
+                        },
                     )
+                    _test_node_connectivity(node)
                     messages.success(request, 'External ZAP node connectivity test succeeded.')
                 except Exception as exc:
                     messages.error(request, f'External ZAP connectivity failed: {exc}')
@@ -388,6 +461,29 @@ def ops_overview(request):
 
     status_rows = []
     checks = connectivity_checks()
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'test_all_nodes':
+            tested, failed = _test_all_nodes()
+            if failed:
+                messages.warning(request, f'Tested {tested} nodes with {failed} failures.')
+            else:
+                messages.success(request, f'Tested {tested} nodes successfully.')
+            return redirect('ops-overview')
+        if action == 'scale_internal_pool':
+            if not OPS_ENABLED:
+                messages.error(request, 'Ops Agent must be enabled for internal scaling.')
+                return redirect('ops-overview')
+            try:
+                replicas = max(0, int(request.POST.get('desired_pool_size', '1')))
+                response = _ops_post('/compose/scale', json={'service': 'zap', 'replicas': replicas})
+                response.raise_for_status()
+                created, disabled = _sync_internal_nodes()
+                _save_setting('zap_internal_pool', {'desired_size': replicas})
+                messages.success(request, f'Internal pool scaled to {replicas}. Registered {created}, disabled {disabled}.')
+            except Exception as exc:
+                messages.error(request, f'Failed to scale internal pool: {exc}')
+            return redirect('ops-overview')
 
     if OPS_ENABLED:
         try:
@@ -408,6 +504,9 @@ def ops_overview(request):
     else:
         status_rows = [{'service': s, 'state': 'disabled', 'status': 'Enable ENABLE_OPS_AGENT=true + COMPOSE_PROFILES=ops'} for s in OPS_SERVICES]
 
+    pool_setting = Setting.objects.filter(key='zap_internal_pool').first()
+    desired_pool_size = (pool_setting.value or {}).get('desired_size', 1) if pool_setting else 1
+
     return render(
         request,
         'core/ops_overview.html',
@@ -415,8 +514,75 @@ def ops_overview(request):
             'ops_enabled': OPS_ENABLED,
             'status_rows': status_rows,
             'checks': checks,
+            'desired_pool_size': desired_pool_size,
+            'nodes': ZapNode.objects.order_by('name'),
         },
     )
+
+
+@login_required
+def zapnodes(request):
+    denied = _admin_only(request)
+    if denied:
+        return denied
+
+    if request.method == 'POST':
+        action = request.POST.get('action')
+        if action == 'add_external':
+            name = request.POST.get('name', '').strip()
+            base_url = request.POST.get('base_url', '').strip()
+            api_key = request.POST.get('api_key', '').strip()
+            if not name or not base_url:
+                messages.error(request, 'Name and base URL are required.')
+            else:
+                node = ZapNode.objects.create(
+                    name=name,
+                    base_url=base_url,
+                    api_key=api_key,
+                    enabled=True,
+                    managed_type=ZapNode.MANAGED_EXTERNAL,
+                )
+                messages.success(request, f'Added external node {node.name}.')
+        elif action == 'remove_external':
+            node = ZapNode.objects.filter(pk=request.POST.get('node_id'), managed_type=ZapNode.MANAGED_EXTERNAL).first()
+            if node:
+                node.delete()
+                messages.success(request, 'External node removed.')
+        elif action == 'test_node':
+            node = ZapNode.objects.filter(pk=request.POST.get('node_id')).first()
+            if node:
+                try:
+                    version, latency = _test_node_connectivity(node)
+                    messages.success(request, f'{node.name} healthy (version {version}, {latency} ms).')
+                except Exception as exc:
+                    node.last_health_check = timezone.now()
+                    node.status = ZapNode.STATUS_UNREACHABLE
+                    node.save(update_fields=['last_health_check', 'status'])
+                    messages.error(request, f'Node {node.name} test failed: {exc}')
+        elif action == 'test_all_nodes':
+            tested, failed = _test_all_nodes()
+            if failed:
+                messages.warning(request, f'Tested {tested} nodes with {failed} failures.')
+            else:
+                messages.success(request, f'Tested {tested} nodes successfully.')
+        return redirect('zapnodes')
+
+    return render(request, 'core/zapnodes.html', {'nodes': ZapNode.objects.order_by('name')})
+
+
+def _test_all_nodes() -> tuple[int, int]:
+    tested = 0
+    failed = 0
+    for node in ZapNode.objects.filter(enabled=True):
+        tested += 1
+        try:
+            _test_node_connectivity(node)
+        except Exception:
+            failed += 1
+            node.last_health_check = timezone.now()
+            node.status = ZapNode.STATUS_UNREACHABLE
+            node.save(update_fields=['last_health_check', 'status'])
+    return tested, failed
 
 
 @login_required
@@ -508,10 +674,11 @@ def connectivity_checks(database_config: dict | None = None) -> list[dict[str, s
     except Exception as exc:
         checks.append({'name': 'Redis ping', 'status': 'failed', 'hint': str(exc)})
 
-    try:
-        response = requests.get('http://zap:8090', timeout=5)
-        checks.append({'name': 'Internal ZAP ping', 'status': 'ok', 'hint': f'HTTP {response.status_code}'})
-    except Exception as exc:
-        checks.append({'name': 'Internal ZAP ping', 'status': 'failed', 'hint': str(exc)})
+    nodes = ZapNode.objects.filter(enabled=True)
+    if not nodes.exists():
+        checks.append({'name': 'ZAP nodes', 'status': 'warning', 'hint': 'No enabled ZAP nodes configured.'})
+    else:
+        tested, failed = _test_all_nodes()
+        checks.append({'name': 'ZAP nodes', 'status': 'ok' if failed == 0 else 'failed', 'hint': f'Tested {tested}, failures {failed}'})
 
     return checks
