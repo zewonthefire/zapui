@@ -143,6 +143,6 @@ docker compose ps
 
 echo
 ok "Installation/update complete"
-echo "Setup URL:       http://localhost:${PUBLIC_HTTP_PORT}/setup"
-echo "Health endpoint: http://localhost:${PUBLIC_HTTP_PORT}/health"
-echo "HTTPS endpoint:  https://localhost:${PUBLIC_HTTPS_PORT}/"
+echo "Setup URL:       http://${PUBLIC_HOSTNAME}:${PUBLIC_HTTP_PORT}/setup"
+echo "Health endpoint: http://${PUBLIC_HOSTNAME}:${PUBLIC_HTTP_PORT}/health"
+echo "HTTPS endpoint:  https://${PUBLIC_HOSTNAME}:${PUBLIC_HTTPS_PORT}/"
