@@ -4,6 +4,7 @@
 <h1 class="h3">Target: {{ target.name }}</h1>
 <p>Project: <a href="/projects/{{ target.project.id }}">{{ target.project.name }}</a></p>
 <p>Risk score: <strong>{{ latest_target_risk.risk_score|default:"0" }}</strong></p>
+<p><a href="/targets/{{ target.id }}/evolution">View evolution timeline & diffs</a></p>
 
 <div class="card mt-3">
   <div class="card-body">

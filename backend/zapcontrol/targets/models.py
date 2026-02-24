@@ -221,3 +221,17 @@ class RiskSnapshot(models.Model):
 
     class Meta:
         ordering = ('-created_at',)
+
+
+class ScanComparison(models.Model):
+    target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='scan_comparisons')
+    from_scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='comparisons_from')
+    to_scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='comparisons_to')
+    new_finding_ids = models.JSONField(default=list, blank=True)
+    resolved_finding_ids = models.JSONField(default=list, blank=True)
+    risk_delta = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+        unique_together = ('target', 'from_scan_job', 'to_scan_job')

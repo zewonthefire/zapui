@@ -5,7 +5,7 @@ from django.utils import timezone
 
 from core.models import Setting
 
-from .models import Finding, FindingInstance, RiskSnapshot
+from .models import Finding, FindingInstance, RiskSnapshot, ScanComparison, ScanJob
 
 DEFAULT_RISK_WEIGHTS = {
     'High': 10,
@@ -141,3 +141,41 @@ def create_risk_snapshots(scan_job):
         risk_score=_score_from_counts(global_counts, weights),
         counts_by_severity=global_counts,
     )
+
+
+def create_scan_comparison(scan_job):
+    previous_job = (
+        ScanJob.objects.filter(target=scan_job.target, status=ScanJob.STATUS_COMPLETED, completed_at__isnull=False)
+        .exclude(pk=scan_job.pk)
+        .order_by('-completed_at', '-id')
+        .first()
+    )
+    if not previous_job:
+        return None
+
+    current_instances = FindingInstance.objects.filter(scan_job=scan_job).values_list('finding_id', flat=True).distinct()
+    previous_instances = FindingInstance.objects.filter(scan_job=previous_job).values_list('finding_id', flat=True).distinct()
+
+    current_ids = set(current_instances)
+    previous_ids = set(previous_instances)
+
+    current_target_snapshot = (
+        RiskSnapshot.objects.filter(target=scan_job.target, project__isnull=True, scan_job=scan_job).first()
+    )
+    previous_target_snapshot = (
+        RiskSnapshot.objects.filter(target=scan_job.target, project__isnull=True, scan_job=previous_job).first()
+    )
+    current_risk = current_target_snapshot.risk_score if current_target_snapshot else Decimal('0')
+    previous_risk = previous_target_snapshot.risk_score if previous_target_snapshot else Decimal('0')
+
+    comparison, _ = ScanComparison.objects.update_or_create(
+        target=scan_job.target,
+        from_scan_job=previous_job,
+        to_scan_job=scan_job,
+        defaults={
+            'new_finding_ids': sorted(current_ids - previous_ids),
+            'resolved_finding_ids': sorted(previous_ids - current_ids),
+            'risk_delta': current_risk - previous_risk,
+        },
+    )
+    return comparison
