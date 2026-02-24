@@ -1,0 +1,27 @@
+{% extends "core/base.html" %}
+{% block title %}Reports{% endblock %}
+{% block content %}
+<div class="card"><div class="card-body">
+  <h1 class="h4">Reports</h1>
+  <table class="table table-sm">
+    <thead><tr><th>Scan</th><th>Project</th><th>Target</th><th>Created</th><th>Downloads</th></tr></thead>
+    <tbody>
+      {% for report in reports %}
+      <tr>
+        <td><a href="/scans/{{ report.scan_job.id }}">#{{ report.scan_job.id }}</a></td>
+        <td>{{ report.scan_job.project.name }}</td>
+        <td>{{ report.scan_job.target.name }}</td>
+        <td>{{ report.created_at }}</td>
+        <td>
+          <a href="/scans/{{ report.scan_job.id }}/report/html">HTML</a> |
+          <a href="/scans/{{ report.scan_job.id }}/report/json">JSON</a> |
+          <a href="/scans/{{ report.scan_job.id }}/report/pdf">PDF</a>
+        </td>
+      </tr>
+      {% empty %}
+      <tr><td colspan="5" class="text-muted">No reports generated yet.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div></div>
+{% endblock %}

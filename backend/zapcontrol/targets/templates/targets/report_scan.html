@@ -1,0 +1,72 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Scan Report #{{ job.id }}</title>
+  <style>
+    body { font-family: Arial, sans-serif; font-size: 12px; color: #222; }
+    h1,h2,h3 { margin-bottom: 6px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+    th, td { border: 1px solid #ccc; padding: 6px; vertical-align: top; }
+    .sev-High { color: #b30000; font-weight: bold; }
+    .sev-Medium { color: #c77700; font-weight: bold; }
+    .sev-Low { color: #005eb8; font-weight: bold; }
+    .sev-Info { color: #555; }
+    .muted { color: #666; }
+  </style>
+</head>
+<body>
+  <h1>Security Scan Report #{{ report.scan.id }}</h1>
+  <p class="muted">Generated for {{ report.scan.project }} / {{ report.scan.target }} ({{ report.scan.target_url }})</p>
+
+  <h2>Summary</h2>
+  <table>
+    <tr><th>Status</th><td>{{ report.scan.status }}</td></tr>
+    <tr><th>Profile</th><td>{{ report.scan.profile }}</td></tr>
+    <tr><th>Risk Score</th><td>{{ report.scan.risk_score }}</td></tr>
+    <tr><th>Findings</th><td>{{ report.scan.findings_count }}</td></tr>
+    <tr><th>Instances</th><td>{{ report.scan.instances_count }}</td></tr>
+    <tr><th>Completed</th><td>{{ report.scan.completed_at }}</td></tr>
+  </table>
+
+  <h2>Severity Breakdown</h2>
+  <table>
+    <thead><tr><th>High</th><th>Medium</th><th>Low</th><th>Info</th></tr></thead>
+    <tbody>
+      <tr>
+        <td class="sev-High">{{ report.scan.severity_breakdown.High }}</td>
+        <td class="sev-Medium">{{ report.scan.severity_breakdown.Medium }}</td>
+        <td class="sev-Low">{{ report.scan.severity_breakdown.Low }}</td>
+        <td class="sev-Info">{{ report.scan.severity_breakdown.Info }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h2>Detailed Findings</h2>
+  {% for finding in report.findings %}
+    <h3>{{ forloop.counter }}. {{ finding.title }} <span class="sev-{{ finding.severity }}">({{ finding.severity }})</span></h3>
+    <p><strong>Plugin ID:</strong> {{ finding.plugin_id }} | <strong>CWE:</strong> {{ finding.cwe_id|default:"-" }} | <strong>WASC:</strong> {{ finding.wasc_id|default:"-" }}</p>
+    <p><strong>Description:</strong> {{ finding.description|default:"-" }}</p>
+    <p><strong>Solution:</strong> {{ finding.solution|default:"-" }}</p>
+    <p><strong>Reference:</strong> {{ finding.reference|default:"-" }}</p>
+
+    <table>
+      <thead><tr><th>URL</th><th>Method</th><th>Parameter</th><th>Evidence</th></tr></thead>
+      <tbody>
+      {% for item in finding.instances %}
+        <tr>
+          <td>{{ item.url }}</td>
+          <td>{{ item.method|default:"-" }}</td>
+          <td>{{ item.parameter|default:"-" }}</td>
+          <td>{{ item.evidence|default:"-" }}</td>
+        </tr>
+      {% empty %}
+        <tr><td colspan="4" class="muted">No instances captured.</td></tr>
+      {% endfor %}
+      </tbody>
+    </table>
+  {% empty %}
+    <p class="muted">No findings were captured for this scan.</p>
+  {% endfor %}
+</body>
+</html>

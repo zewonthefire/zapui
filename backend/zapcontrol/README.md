@@ -282,3 +282,46 @@ python manage.py migrate
 - add suppression rules
 - add tests for normalization idempotency and snapshot math
 
+
+## Reporting and exports
+
+Completed scans now generate a persisted `Report` with three downloadable formats:
+
+- HTML report (human-readable)
+- JSON export (structured findings data)
+- PDF report (rendered through internal PDF service)
+
+### Generation flow
+
+At scan completion (`targets.tasks.start_scan_job`):
+
+1. Build report payload with summary, risk score, severity breakdown, detailed findings, and instances.
+2. Render HTML template (`targets/templates/targets/report_scan.html`).
+3. Serialize JSON export.
+4. Send HTML to PDF service (`POST /render` on `PDF_SERVICE_URL`) and store returned PDF bytes.
+5. Save all three files in media storage and create/update `targets.Report`.
+
+### Storage locations
+
+Reports are stored under `MEDIA_ROOT` using:
+
+- `reports/html/scan-<id>.html`
+- `reports/json/scan-<id>.json`
+- `reports/pdf/scan-<id>.pdf`
+
+### UI routes
+
+- Scan detail downloads:
+  - `/scans/<id>/report/html`
+  - `/scans/<id>/report/json`
+  - `/scans/<id>/report/pdf`
+- Reports index:
+  - `/reports`
+
+### PDF troubleshooting
+
+- Ensure PDF container is healthy and reachable from web/worker:
+  - `PDF_SERVICE_URL` defaults to `http://pdf:8092`
+- Check logs:
+  - `docker compose logs pdf`
+- If wkhtmltopdf reports conversion errors, validate HTML and options payload.

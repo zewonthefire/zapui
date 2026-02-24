@@ -3,10 +3,11 @@ from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import OuterRef, Subquery
-from django.http import Http404
+from django.http import FileResponse, Http404
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .models import Finding, FindingInstance, RiskSnapshot, ScanComparison, ScanJob, ScanProfile, Target, Project
+from .models import Finding, FindingInstance, Report, RiskSnapshot, ScanComparison, ScanJob, ScanProfile, Target, Project
+from .reports import generate_scan_report
 from .tasks import start_scan_job
 
 
@@ -174,3 +175,31 @@ def target_detail(request, target_id: int):
         'targets/target_detail.html',
         {'target': target, 'latest_target_risk': latest_target_risk, 'open_findings': open_findings},
     )
+
+
+@login_required
+def report_download(request, scan_id: int, report_format: str):
+    job = get_object_or_404(ScanJob.objects.select_related('project', 'target', 'profile'), pk=scan_id)
+    if job.status != ScanJob.STATUS_COMPLETED:
+        raise Http404('Reports are only available for completed scans.')
+
+    report = Report.objects.filter(scan_job=job).first()
+    if not report or not report.html_file or not report.json_file or not report.pdf_file:
+        report = generate_scan_report(job)
+
+    mapping = {
+        'html': (report.html_file, 'text/html'),
+        'json': (report.json_file, 'application/json'),
+        'pdf': (report.pdf_file, 'application/pdf'),
+    }
+    if report_format not in mapping:
+        raise Http404('Unsupported report format.')
+
+    file_field, content_type = mapping[report_format]
+    return FileResponse(file_field.open('rb'), content_type=content_type, as_attachment=True, filename=file_field.name.split('/')[-1])
+
+
+@login_required
+def reports_list(request):
+    reports = Report.objects.select_related('scan_job__project', 'scan_job__target').all()
+    return render(request, 'targets/reports.html', {'reports': reports})

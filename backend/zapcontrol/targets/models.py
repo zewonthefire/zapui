@@ -235,3 +235,14 @@ class ScanComparison(models.Model):
     class Meta:
         ordering = ('-created_at',)
         unique_together = ('target', 'from_scan_job', 'to_scan_job')
+
+
+class Report(models.Model):
+    scan_job = models.OneToOneField(ScanJob, on_delete=models.CASCADE, related_name='report')
+    html_file = models.FileField(upload_to='reports/html/')
+    json_file = models.FileField(upload_to='reports/json/')
+    pdf_file = models.FileField(upload_to='reports/pdf/')
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)
