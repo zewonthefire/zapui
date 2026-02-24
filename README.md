@@ -22,7 +22,7 @@ This repository now provides an **initial skeleton** for a future ZAP Control Ce
 - PostgreSQL + Redis
 - Internal-only OWASP ZAP daemon (`zaproxy/zap-stable`) on the compose network
 - Placeholder PDF container (`wkhtmltopdf` image-based)
-- Placeholder Ops Agent container (profile-gated, disabled by default)
+- FastAPI Ops Agent (profile-gated, disabled by default)
 - Interactive installer script (`scripts/install.sh`)
 - Operator Makefile targets for lifecycle tasks
 
@@ -50,7 +50,7 @@ worker/beat -> redis + db
 - `db`: PostgreSQL database
 - `zap`: OWASP ZAP daemon mode; exposed only inside Docker network
 - `pdf`: placeholder microservice (wkhtmltopdf installed)
-- `ops`: placeholder ops agent (disabled unless profile `ops` is enabled)
+- `ops`: FastAPI operations agent (disabled unless profile `ops` is enabled)
 
 ## Nginx behavior
 
@@ -92,6 +92,58 @@ Application/API endpoints currently available:
 - `GET /setup` -> setup placeholder response (wizard not implemented yet)
 - `GET /dashboard` -> authenticated dashboard shell
 - `GET /api/version` -> `{"name":"zapcontrol","version":"..."}`
+
+
+## Operations subsystem (baseline)
+
+The repo now includes an Operations subsystem with:
+
+- `ops` FastAPI service for container monitoring and lifecycle tasks.
+- Django admin-only operations pages:
+  - `/ops/overview` (service status + connectivity checks)
+  - `/ops/logs/<service>` (tail logs)
+  - `/ops/actions` (restart/rebuild/redeploy with password re-confirmation)
+
+### Security model
+
+- **Ops Agent is disabled by default.**
+- Controlled by `ENABLE_OPS_AGENT=false` (default).
+- Enable by setting:
+  - `ENABLE_OPS_AGENT=true`
+  - `OPS_AGENT_TOKEN=<strong secret>`
+  - `COMPOSE_PROFILES=ops`
+- Agent listens only on the internal compose network (`ops:8091`) and has no host port mapping.
+- Agent requires `X-OPS-TOKEN` header for privileged compose endpoints.
+- Agent enforces a strict service allowlist derived from this compose project (`COMPOSE_PROJECT_NAME`).
+
+### Docker socket warning
+
+When `ops` runs, it mounts `/var/run/docker.sock` and project directory into the agent container so it can execute:
+
+- `docker compose build <services>`
+- `docker compose up -d --no-deps <services>`
+
+Treat the ops container as highly privileged. Use a strong `OPS_AGENT_TOKEN`, restrict who can access internal services, and keep ops disabled unless needed.
+
+### Common workflows
+
+Restart `web` from UI:
+
+1. Open `/ops/actions` as an admin user.
+2. Select restart + service `web`.
+3. Re-enter your password to confirm.
+
+Rebuild and redeploy `web` from UI:
+
+1. Open `/ops/actions`.
+2. Use `rebuild` with services `web`.
+3. Use `redeploy` with services `web`.
+4. Confirm each action with password re-auth.
+
+Read-only mode when disabled:
+
+- `/ops/overview` still shows DB/Redis/ZAP connectivity tests.
+- Action pages display clear enablement instructions.
 
 ## Installation
 

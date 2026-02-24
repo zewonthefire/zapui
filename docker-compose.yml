@@ -95,6 +95,17 @@ services:
       context: .
       dockerfile: docker/ops/Dockerfile
     profiles: ["ops"]
+    env_file:
+      - .env
+    environment:
+      ENABLE_OPS_AGENT: ${ENABLE_OPS_AGENT:-false}
+      COMPOSE_PROJECT_NAME: ${COMPOSE_PROJECT_NAME:-zapui}
+      OPS_PROJECT_DIR: /workspace
+    volumes:
+      - ./:/workspace
+      - /var/run/docker.sock:/var/run/docker.sock
+    expose:
+      - "8091"
     restart: unless-stopped
 
 volumes:
