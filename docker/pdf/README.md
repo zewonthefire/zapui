@@ -1,21 +1,39 @@
-# PDF Service Placeholder (`docker/pdf`)
+# PDF Service (`docker/pdf`)
 
-This image is currently a placeholder microservice used to reserve a future PDF/reporting integration point.
+Internal-only PDF rendering service used by ZapUI reporting.
 
-## Files
+## API
 
-- `Dockerfile`
+- `POST /render`
+  - Request body:
+    ```json
+    {
+      "html": "<html>...</html>",
+      "options": {
+        "encoding": "UTF-8",
+        "margin-top": "10mm"
+      }
+    }
+    ```
+  - Response: raw PDF bytes (`application/pdf`)
 
-## Behavior
+- `GET /health`
+  - Basic health response.
 
-- Base image: `alpine:3.20`
-- Installs `wkhtmltopdf`
-- Starts a no-op long-running command to keep the container alive
+## Implementation
 
-Current command:
+- Base image: `python:3.12-alpine`
+- Uses `Flask` for HTTP handling.
+- Uses `wkhtmltopdf` for HTML->PDF conversion.
+- Container is not published externally in `docker-compose.yml`; it is reachable only on the internal compose network as `http://pdf:8092`.
 
-```bash
-sh -c "echo 'PDF service placeholder running'; tail -f /dev/null"
-```
+## Troubleshooting
 
-No HTTP API is exposed yet.
+- If PDF generation fails, inspect service logs:
+  ```bash
+  docker compose logs pdf
+  ```
+- Common causes:
+  - malformed HTML in payload
+  - unsupported wkhtmltopdf options
+  - missing fonts for rendered language/script

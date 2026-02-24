@@ -22,10 +22,13 @@ services:
       dockerfile: docker/web/Dockerfile
     env_file:
       - .env
+    environment:
+      PDF_SERVICE_URL: ${PDF_SERVICE_URL:-http://pdf:8092}
     depends_on:
       - db
       - redis
       - zap
+      - pdf
     volumes:
       - static:/app/staticfiles
       - media:/app/mediafiles
@@ -40,9 +43,12 @@ services:
     command: ["celery", "-A", "zapcontrol", "worker", "-l", "info"]
     env_file:
       - .env
+    environment:
+      PDF_SERVICE_URL: ${PDF_SERVICE_URL:-http://pdf:8092}
     depends_on:
       - db
       - redis
+      - pdf
     volumes:
       - media:/app/mediafiles
     restart: unless-stopped
@@ -54,9 +60,12 @@ services:
     command: ["celery", "-A", "zapcontrol", "beat", "-l", "info"]
     env_file:
       - .env
+    environment:
+      PDF_SERVICE_URL: ${PDF_SERVICE_URL:-http://pdf:8092}
     depends_on:
       - db
       - redis
+      - pdf
     volumes:
       - media:/app/mediafiles
     restart: unless-stopped

@@ -13,6 +13,14 @@
     <dt class="col-sm-3">Active Scan ID</dt><dd class="col-sm-9">{{ job.zap_ascan_id|default:'-' }}</dd>
     <dt class="col-sm-3">Error</dt><dd class="col-sm-9">{{ job.error_message|default:'-' }}</dd>
   </dl>
+
+  {% if job.status == 'completed' %}
+  <div class="mb-3">
+    <a class="btn btn-sm btn-outline-primary" href="/scans/{{ job.id }}/report/html">Download HTML</a>
+    <a class="btn btn-sm btn-outline-primary" href="/scans/{{ job.id }}/report/json">Download JSON</a>
+    <a class="btn btn-sm btn-outline-primary" href="/scans/{{ job.id }}/report/pdf">Download PDF</a>
+  </div>
+  {% endif %}
   {% if latest_raw %}
     <h2 class="h5">Raw Alerts ({{ latest_raw.raw_alerts|length }})</h2>
     <pre class="bg-light p-3 border rounded" style="max-height: 420px; overflow: auto;">{{ latest_raw.raw_alerts|pprint }}</pre>
