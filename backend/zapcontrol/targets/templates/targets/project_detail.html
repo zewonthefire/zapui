@@ -1,0 +1,19 @@
+{% extends "core/base.html" %}
+{% block title %}Project Risk{% endblock %}
+{% block content %}
+<h1 class="h3">Project: {{ project.name }}</h1>
+<p>Risk score: <strong>{{ latest_project_risk.risk_score|default:"0" }}</strong></p>
+
+<div class="card mt-3">
+  <div class="card-body">
+    <h2 class="h5">Top risky targets</h2>
+    <ul class="mb-0">
+      {% for target in top_targets %}
+      <li><a href="/targets/{{ target.id }}">{{ target.name }}</a> — {{ target.latest_risk|default:"0" }}</li>
+      {% empty %}
+      <li class="text-muted">No targets.</li>
+      {% endfor %}
+    </ul>
+  </div>
+</div>
+{% endblock %}

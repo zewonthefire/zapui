@@ -170,3 +170,54 @@ class RawZapResult(models.Model):
 
     def __str__(self):
         return f'Raw alerts for job #{self.scan_job_id}'
+
+
+class Finding(models.Model):
+    target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='findings')
+    scan_job = models.ForeignKey(ScanJob, on_delete=models.SET_NULL, related_name='findings', blank=True, null=True)
+    zap_plugin_id = models.CharField(max_length=64)
+    title = models.CharField(max_length=255)
+    severity = models.CharField(max_length=16, default='Info')
+    description = models.TextField(blank=True)
+    solution = models.TextField(blank=True)
+    reference = models.TextField(blank=True)
+    cwe_id = models.CharField(max_length=32, blank=True)
+    wasc_id = models.CharField(max_length=32, blank=True)
+    first_seen = models.DateTimeField()
+    last_seen = models.DateTimeField()
+    instances_count = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        unique_together = ('target', 'zap_plugin_id', 'title')
+        ordering = ('-last_seen',)
+
+    def __str__(self):
+        return f'{self.target_id}:{self.title}'
+
+
+class FindingInstance(models.Model):
+    finding = models.ForeignKey(Finding, on_delete=models.CASCADE, related_name='instances')
+    scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='finding_instances')
+    url = models.URLField(max_length=2048, blank=True)
+    parameter = models.CharField(max_length=255, blank=True)
+    evidence = models.TextField(blank=True)
+    attack = models.TextField(blank=True)
+    other = models.TextField(blank=True)
+    method = models.CharField(max_length=16, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('finding', 'scan_job', 'url', 'parameter', 'evidence')
+        ordering = ('-created_at',)
+
+
+class RiskSnapshot(models.Model):
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='risk_snapshots', blank=True, null=True)
+    target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='risk_snapshots', blank=True, null=True)
+    scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='risk_snapshots')
+    risk_score = models.DecimalField(max_digits=12, decimal_places=2)
+    counts_by_severity = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)

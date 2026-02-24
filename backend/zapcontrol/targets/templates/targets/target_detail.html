@@ -1,0 +1,28 @@
+{% extends "core/base.html" %}
+{% block title %}Target Risk{% endblock %}
+{% block content %}
+<h1 class="h3">Target: {{ target.name }}</h1>
+<p>Project: <a href="/projects/{{ target.project.id }}">{{ target.project.name }}</a></p>
+<p>Risk score: <strong>{{ latest_target_risk.risk_score|default:"0" }}</strong></p>
+
+<div class="card mt-3">
+  <div class="card-body">
+    <h2 class="h5">Open findings</h2>
+    <table class="table table-sm">
+      <thead><tr><th>Severity</th><th>Title</th><th>Instances</th><th>Last Seen</th></tr></thead>
+      <tbody>
+        {% for finding in open_findings %}
+        <tr>
+          <td>{{ finding.severity }}</td>
+          <td>{{ finding.title }}</td>
+          <td>{{ finding.instances_count }}</td>
+          <td>{{ finding.last_seen }}</td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="4" class="text-muted">No findings.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

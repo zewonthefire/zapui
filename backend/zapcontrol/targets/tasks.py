@@ -7,6 +7,7 @@ from django.db.models import Count, Q
 from django.utils import timezone
 
 from .models import RawZapResult, ScanJob, ScanProfile, ZapNode
+from .risk import create_risk_snapshots, normalize_alerts_to_findings
 
 RETRYABLE_EXCEPTIONS = (requests.Timeout, requests.ConnectionError)
 
@@ -146,6 +147,8 @@ def start_scan_job(self, scan_job_id: int):
 
         alerts = client.alerts(job.target.base_url)
         RawZapResult.objects.create(scan_job=job, raw_alerts=alerts)
+        normalize_alerts_to_findings(job, alerts)
+        create_risk_snapshots(job)
 
         job.status = ScanJob.STATUS_COMPLETED
         job.completed_at = timezone.now()
