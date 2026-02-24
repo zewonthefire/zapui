@@ -98,3 +98,75 @@ class Target(models.Model):
 
     def __str__(self):
         return f'{self.project.slug}:{self.name}'
+
+
+class ScanProfile(models.Model):
+    TYPE_BASELINE_LIKE = 'baseline_like'
+    TYPE_FULL_ACTIVE = 'full_active'
+    TYPE_API_SCAN = 'api_scan'
+    SCAN_TYPE_CHOICES = [
+        (TYPE_BASELINE_LIKE, 'Baseline-like'),
+        (TYPE_FULL_ACTIVE, 'Full active'),
+        (TYPE_API_SCAN, 'API scan'),
+    ]
+
+    name = models.CharField(max_length=120)
+    description = models.TextField(blank=True)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='scan_profiles', blank=True, null=True)
+    zap_node = models.ForeignKey(ZapNode, on_delete=models.SET_NULL, related_name='scan_profiles', blank=True, null=True)
+    scan_type = models.CharField(max_length=32, choices=SCAN_TYPE_CHOICES, default=TYPE_BASELINE_LIKE)
+    spider_enabled = models.BooleanField(default=True)
+    max_duration_minutes = models.PositiveIntegerField(default=30)
+    extra_zap_options = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('name',)
+        unique_together = ('project', 'name')
+
+    def __str__(self):
+        return self.name
+
+
+class ScanJob(models.Model):
+    STATUS_PENDING = 'pending'
+    STATUS_RUNNING = 'running'
+    STATUS_COMPLETED = 'completed'
+    STATUS_FAILED = 'failed'
+    STATUS_CHOICES = [
+        (STATUS_PENDING, 'Pending'),
+        (STATUS_RUNNING, 'Running'),
+        (STATUS_COMPLETED, 'Completed'),
+        (STATUS_FAILED, 'Failed'),
+    ]
+
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='scan_jobs')
+    target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='scan_jobs')
+    profile = models.ForeignKey(ScanProfile, on_delete=models.PROTECT, related_name='scan_jobs')
+    initiated_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, related_name='initiated_scan_jobs', blank=True, null=True)
+    zap_node = models.ForeignKey(ZapNode, on_delete=models.SET_NULL, related_name='scan_jobs', blank=True, null=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    created_at = models.DateTimeField(auto_now_add=True)
+    started_at = models.DateTimeField(blank=True, null=True)
+    completed_at = models.DateTimeField(blank=True, null=True)
+    error_message = models.TextField(blank=True)
+    zap_spider_id = models.CharField(max_length=64, blank=True)
+    zap_ascan_id = models.CharField(max_length=64, blank=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+
+    def __str__(self):
+        return f'Job #{self.id} {self.target}'
+
+
+class RawZapResult(models.Model):
+    scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='raw_results')
+    raw_alerts = models.JSONField(default=list, blank=True)
+    fetched_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-fetched_at',)
+
+    def __str__(self):
+        return f'Raw alerts for job #{self.scan_job_id}'
