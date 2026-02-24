@@ -22,7 +22,7 @@ from rest_framework.response import Response
 
 from targets.models import Project, RiskSnapshot, Target, ZapNode
 
-from .models import Setting, SetupState
+from .models import OpsAuditLog, Setting, SetupState
 
 OPS_ENABLED = os.getenv('ENABLE_OPS_AGENT', 'false').lower() in {'1', 'true', 'yes', 'on'}
 OPS_AGENT_URL = os.getenv('OPS_AGENT_URL', 'http://ops:8091')
@@ -48,6 +48,26 @@ def _admin_only(request: HttpRequest):
         return redirect('dashboard')
     return None
 
+
+
+
+def _audit_ops_action(request: HttpRequest, action: str, target: str = '', status: str = OpsAuditLog.STATUS_SUCCESS, result: str = ''):
+    OpsAuditLog.objects.create(
+        user=request.user if getattr(request, 'user', None) and request.user.is_authenticated else None,
+        action=action,
+        target=target,
+        status=status,
+        result=result[:4000],
+    )
+
+
+def _require_reauth(request: HttpRequest, action: str, target: str = ''):
+    password = request.POST.get('password', '')
+    if not request.user.check_password(password):
+        _audit_ops_action(request, action, target=target, status=OpsAuditLog.STATUS_DENIED, result='Password confirmation failed')
+        messages.error(request, 'Password confirmation failed. Action cancelled.')
+        return False
+    return True
 
 def _ops_headers() -> dict[str, str]:
     return {'X-OPS-TOKEN': OPS_AGENT_TOKEN} if OPS_AGENT_TOKEN else {}
@@ -476,12 +496,16 @@ def ops_overview(request):
     checks = connectivity_checks()
     if request.method == 'POST':
         action = request.POST.get('action')
+        if not _require_reauth(request, action=action or 'ops_overview_action', target=request.POST.get('desired_pool_size', '') or 'ops'):
+            return redirect('ops-overview')
         if action == 'test_all_nodes':
             tested, failed = _test_all_nodes()
             if failed:
                 messages.warning(request, f'Tested {tested} nodes with {failed} failures.')
+                _audit_ops_action(request, 'test_all_nodes', target='all_zap_nodes', status=OpsAuditLog.STATUS_FAILED, result=f'tested={tested},failed={failed}')
             else:
                 messages.success(request, f'Tested {tested} nodes successfully.')
+                _audit_ops_action(request, 'test_all_nodes', target='all_zap_nodes', status=OpsAuditLog.STATUS_SUCCESS, result=f'tested={tested},failed={failed}')
             return redirect('ops-overview')
         if action == 'scale_internal_pool':
             if not OPS_ENABLED:
@@ -494,8 +518,10 @@ def ops_overview(request):
                 created, disabled = _sync_internal_nodes()
                 _save_setting('zap_internal_pool', {'desired_size': replicas})
                 messages.success(request, f'Internal pool scaled to {replicas}. Registered {created}, disabled {disabled}.')
+                _audit_ops_action(request, 'scale_internal_pool', target=f'zap={replicas}', status=OpsAuditLog.STATUS_SUCCESS, result=f'registered={created},disabled={disabled}')
             except Exception as exc:
                 messages.error(request, f'Failed to scale internal pool: {exc}')
+                _audit_ops_action(request, 'scale_internal_pool', target='zap', status=OpsAuditLog.STATUS_FAILED, result=str(exc))
             return redirect('ops-overview')
 
     if OPS_ENABLED:
@@ -517,6 +543,7 @@ def ops_overview(request):
     else:
         status_rows = [{'service': s, 'state': 'disabled', 'status': 'Enable ENABLE_OPS_AGENT=true + COMPOSE_PROFILES=ops'} for s in OPS_SERVICES]
 
+    running_zap_containers = _discover_internal_zap_containers() if OPS_ENABLED else []
     pool_setting = Setting.objects.filter(key='zap_internal_pool').first()
     desired_pool_size = (pool_setting.value or {}).get('desired_size', 1) if pool_setting else 1
 
@@ -529,6 +556,8 @@ def ops_overview(request):
             'checks': checks,
             'desired_pool_size': desired_pool_size,
             'nodes': ZapNode.objects.order_by('name'),
+            'running_zap_containers': running_zap_containers,
+            'recent_audit_logs': OpsAuditLog.objects.select_related('user')[:20],
         },
     )
 
@@ -541,6 +570,8 @@ def zapnodes(request):
 
     if request.method == 'POST':
         action = request.POST.get('action')
+        if not _require_reauth(request, action=action or 'zapnodes_action', target=request.POST.get('name', '') or request.POST.get('node_id', '')):
+            return redirect('zapnodes')
         if action == 'add_external':
             name = request.POST.get('name', '').strip()
             base_url = request.POST.get('base_url', '').strip()
@@ -556,28 +587,34 @@ def zapnodes(request):
                     managed_type=ZapNode.MANAGED_EXTERNAL,
                 )
                 messages.success(request, f'Added external node {node.name}.')
+                _audit_ops_action(request, 'add_external_node', target=node.name, status=OpsAuditLog.STATUS_SUCCESS, result=node.base_url)
         elif action == 'remove_external':
             node = ZapNode.objects.filter(pk=request.POST.get('node_id'), managed_type=ZapNode.MANAGED_EXTERNAL).first()
             if node:
                 node.delete()
                 messages.success(request, 'External node removed.')
+                _audit_ops_action(request, 'remove_external_node', target=str(node.pk), status=OpsAuditLog.STATUS_SUCCESS, result=node.name)
         elif action == 'test_node':
             node = ZapNode.objects.filter(pk=request.POST.get('node_id')).first()
             if node:
                 try:
                     version, latency = _test_node_connectivity(node)
                     messages.success(request, f'{node.name} healthy (version {version}, {latency} ms).')
+                    _audit_ops_action(request, 'test_node', target=node.name, status=OpsAuditLog.STATUS_SUCCESS, result=f'version={version},latency={latency}')
                 except Exception as exc:
                     node.last_health_check = timezone.now()
                     node.status = ZapNode.STATUS_UNREACHABLE
                     node.save(update_fields=['last_health_check', 'status'])
                     messages.error(request, f'Node {node.name} test failed: {exc}')
+                    _audit_ops_action(request, 'test_node', target=node.name, status=OpsAuditLog.STATUS_FAILED, result=str(exc))
         elif action == 'test_all_nodes':
             tested, failed = _test_all_nodes()
             if failed:
                 messages.warning(request, f'Tested {tested} nodes with {failed} failures.')
+                _audit_ops_action(request, 'test_all_nodes', target='all_zap_nodes', status=OpsAuditLog.STATUS_FAILED, result=f'tested={tested},failed={failed}')
             else:
                 messages.success(request, f'Tested {tested} nodes successfully.')
+                _audit_ops_action(request, 'test_all_nodes', target='all_zap_nodes', status=OpsAuditLog.STATUS_SUCCESS, result=f'tested={tested},failed={failed}')
         return redirect('zapnodes')
 
     return render(request, 'core/zapnodes.html', {'nodes': ZapNode.objects.order_by('name')})
@@ -610,8 +647,10 @@ def ops_logs(request, service):
             response = _ops_get(f'/compose/logs/{service}', params={'tail': request.GET.get('tail', 200)})
             response.raise_for_status()
             logs = response.json().get('logs', '')
+            _audit_ops_action(request, 'view_logs', target=service, status=OpsAuditLog.STATUS_SUCCESS, result='ok')
         except Exception as exc:
             logs = f'Failed to retrieve logs: {exc}'
+            _audit_ops_action(request, 'view_logs', target=service, status=OpsAuditLog.STATUS_FAILED, result=str(exc))
 
     return render(request, 'core/ops_logs.html', {'service': service, 'logs': logs, 'ops_enabled': OPS_ENABLED})
 
@@ -623,8 +662,7 @@ def ops_actions(request):
         return denied
 
     if request.method == 'POST':
-        if not request.user.check_password(request.POST.get('password', '')):
-            messages.error(request, 'Password confirmation failed. Action cancelled.')
+        if not _require_reauth(request, action=request.POST.get('action', 'ops_action'), target=request.POST.get('service', '') or request.POST.get('services', '')):
             return redirect('ops-actions')
 
         if not OPS_ENABLED:
@@ -648,8 +686,10 @@ def ops_actions(request):
 
             response.raise_for_status()
             messages.success(request, f'{action} executed successfully.')
+            _audit_ops_action(request, action, target=service or ','.join(services), status=OpsAuditLog.STATUS_SUCCESS, result='ok')
         except Exception as exc:
             messages.error(request, f'Action failed: {exc}')
+            _audit_ops_action(request, action or 'unknown', target=service or ','.join(services), status=OpsAuditLog.STATUS_FAILED, result=str(exc))
 
         return redirect('ops-actions')
 
@@ -662,23 +702,67 @@ def api_version(request):
     return Response({'name': 'zapcontrol', 'version': settings.APP_VERSION})
 
 
+def _pdf_render_check() -> tuple[bool, str]:
+    pdf_url = os.getenv('PDF_RENDER_URL', 'http://pdf:8092/render')
+    try:
+        response = requests.post(pdf_url, json={'html': '<html><body><h1>health</h1></body></html>'}, timeout=15)
+        if response.status_code != 200:
+            return False, f'PDF render failed with HTTP {response.status_code}'
+        if 'application/pdf' not in response.headers.get('Content-Type', ''):
+            return False, 'PDF renderer returned non-PDF content type'
+        return True, f'PDF render ok ({len(response.content)} bytes)'
+    except Exception as exc:
+        return False, str(exc)
+
+
+def _deep_zap_check(node: ZapNode) -> dict[str, str]:
+    base = node.base_url.rstrip('/')
+    params = {'apikey': node.api_key} if node.api_key else None
+    try:
+        version_response = requests.get(f'{base}/JSON/core/view/version/', params=params, timeout=10)
+        version_response.raise_for_status()
+        version = version_response.json().get('version', 'unknown')
+
+        alerts_response = requests.get(f'{base}/JSON/core/view/numberOfAlerts/', params=params, timeout=10)
+        alerts_response.raise_for_status()
+        alerts_count = alerts_response.json().get('numberOfAlerts', 'n/a')
+
+        if node.api_key:
+            bad_key = requests.get(
+                f'{base}/JSON/core/view/version/',
+                params={'apikey': '__invalid_key__'},
+                timeout=10,
+            )
+            api_key_hint = 'validated' if bad_key.status_code >= 400 else 'key enforcement not detected'
+        else:
+            api_key_hint = 'not configured'
+
+        return {
+            'name': f'ZAP node {node.name}',
+            'status': 'ok',
+            'hint': f'version={version}; api_key={api_key_hint}; numberOfAlerts={alerts_count}',
+        }
+    except Exception as exc:
+        return {'name': f'ZAP node {node.name}', 'status': 'failed', 'hint': str(exc)}
+
+
 def connectivity_checks(database_config: dict | None = None) -> list[dict[str, str]]:
     checks: list[dict[str, str]] = []
 
     database_mode = (database_config or {}).get('mode', 'integrated')
     if database_mode == 'external':
         ok, hint = _test_external_postgres_connection(database_config or {})
-        checks.append({'name': 'External PostgreSQL ping', 'status': 'ok' if ok else 'failed', 'hint': hint})
+        checks.append({'name': 'External PostgreSQL query test', 'status': 'ok' if ok else 'failed', 'hint': hint})
     else:
         try:
             from django.db import connection
 
             with connection.cursor() as cursor:
                 cursor.execute('SELECT 1')
-                cursor.fetchone()
-            checks.append({'name': 'Internal DB ping', 'status': 'ok', 'hint': 'Database reachable'})
+                value = cursor.fetchone()
+            checks.append({'name': 'Internal DB query test', 'status': 'ok', 'hint': f'Database reachable (SELECT returned {value})'})
         except Exception as exc:
-            checks.append({'name': 'Internal DB ping', 'status': 'failed', 'hint': str(exc)})
+            checks.append({'name': 'Internal DB query test', 'status': 'failed', 'hint': str(exc)})
 
     try:
         redis_url = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
@@ -687,11 +771,14 @@ def connectivity_checks(database_config: dict | None = None) -> list[dict[str, s
     except Exception as exc:
         checks.append({'name': 'Redis ping', 'status': 'failed', 'hint': str(exc)})
 
+    pdf_ok, pdf_hint = _pdf_render_check()
+    checks.append({'name': 'PDF render test', 'status': 'ok' if pdf_ok else 'failed', 'hint': pdf_hint})
+
     nodes = ZapNode.objects.filter(enabled=True)
     if not nodes.exists():
         checks.append({'name': 'ZAP nodes', 'status': 'warning', 'hint': 'No enabled ZAP nodes configured.'})
     else:
-        tested, failed = _test_all_nodes()
-        checks.append({'name': 'ZAP nodes', 'status': 'ok' if failed == 0 else 'failed', 'hint': f'Tested {tested}, failures {failed}'})
+        for node in nodes:
+            checks.append(_deep_zap_check(node))
 
     return checks

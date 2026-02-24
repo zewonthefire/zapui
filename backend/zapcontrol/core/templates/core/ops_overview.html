@@ -24,12 +24,17 @@
         <input type="number" min="0" name="desired_pool_size" class="form-control" value="{{ desired_pool_size }}">
       </div>
       <div class="col-md-3">
+        <label class="form-label">Confirm password</label>
+        <input type="password" name="password" class="form-control" required>
+      </div>
+      <div class="col-md-3">
         <button class="btn btn-primary">Apply scale</button>
       </div>
     </form>
     <form method="post" class="mt-2">
       {% csrf_token %}
       <input type="hidden" name="action" value="test_all_nodes">
+      <input type="password" name="password" class="form-control form-control-sm d-inline-block w-auto" placeholder="Confirm password" required>
       <button class="btn btn-outline-primary btn-sm">Test all nodes</button>
       <a class="btn btn-outline-secondary btn-sm" href="/zapnodes">Manage nodes</a>
     </form>
@@ -63,7 +68,7 @@
       <ul class="list-group list-group-flush">
         {% for node in nodes %}
         <li class="list-group-item d-flex justify-content-between">
-          <span>{{ node.name }} <small class="text-muted">({{ node.managed_type }})</small></span>
+          <span>{{ node.name }} <small class="text-muted">({{ node.managed_type }}){% if node.docker_container_name %} → {{ node.docker_container_name }}{% endif %}</small></span>
           <span class="badge {% if node.status == 'healthy' %}text-bg-success{% elif node.status == 'unreachable' %}text-bg-danger{% else %}text-bg-secondary{% endif %}">{{ node.status }}</span>
         </li>
         {% empty %}
@@ -84,6 +89,44 @@
         </li>
         {% endfor %}
       </ul>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">Running ZAP containers</div>
+      <ul class="list-group list-group-flush">
+        {% for container in running_zap_containers %}
+          <li class="list-group-item">{{ container }}</li>
+        {% empty %}
+          <li class="list-group-item text-muted">No running internal zap containers detected.</li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card">
+      <div class="card-header">Recent Ops Audit Log</div>
+      <div class="table-responsive">
+        <table class="table mb-0">
+          <thead><tr><th>When</th><th>User</th><th>Action</th><th>Target</th><th>Status</th></tr></thead>
+          <tbody>
+            {% for row in recent_audit_logs %}
+            <tr>
+              <td>{{ row.created_at }}</td>
+              <td>{% if row.user %}{{ row.user.email }}{% else %}-{% endif %}</td>
+              <td>{{ row.action }}</td>
+              <td>{{ row.target }}</td>
+              <td>{{ row.status }}</td>
+            </tr>
+            {% empty %}
+            <tr><td colspan="5" class="text-muted">No ops audit records yet.</td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 </div>

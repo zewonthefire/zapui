@@ -325,3 +325,92 @@ Reports are stored under `MEDIA_ROOT` using:
 - Check logs:
   - `docker compose logs pdf`
 - If wkhtmltopdf reports conversion errors, validate HTML and options payload.
+
+## Operations handbook (expanded)
+
+### Deep health tests
+
+Use `/ops/overview` to run and review deep health checks:
+
+- **DB query test**: runs `SELECT 1` against integrated or configured external PostgreSQL.
+- **Redis ping**: verifies broker/cache connectivity.
+- **PDF render test**: posts sample HTML to the PDF service and validates PDF response.
+- **ZAP node tests** (per enabled node):
+  - version endpoint check
+  - API key validation behavior check
+  - trivial safe API call (`numberOfAlerts`) without triggering scans
+
+### ZAP pool controls and node/container mapping
+
+From `/ops/overview`:
+
+- View and apply desired internal ZAP pool size.
+- View running internal ZAP containers discovered from compose.
+- See mapping between `ZapNode` records and container names.
+
+### Rebuild/redeploy/restart and logs
+
+From `/ops/actions` and `/ops/logs/<service>`:
+
+- rebuild selected services
+- redeploy selected services
+- restart a single service
+- view logs by service
+
+All mutable operations require admin access and password re-auth.
+
+### Security model for ops
+
+- **Admin-only** access for operations pages/actions.
+- **Re-auth required** for operations actions.
+- **Audit logging** for ops actions including user, action, target, timestamp, and result.
+
+---
+
+## Secure deployment practices
+
+### Network isolation
+
+- Place the deployment behind a **VPN** and expose UI only to trusted operators.
+- Apply **IP allowlists** at firewall / reverse proxy / ingress level.
+- Prefer private network access for DB/Redis/ZAP/PDF services.
+
+### Secrets and authentication
+
+- Rotate `OPS_AGENT_TOKEN` and admin credentials regularly.
+- Keep API keys out of logs and screenshots.
+- Store secrets in environment/secret manager, not in VCS.
+
+### TLS and boundary hardening
+
+- Enforce HTTPS with trusted certificates.
+- Use strict host allowlists (`DJANGO_ALLOWED_HOSTS`).
+- Disable public exposure of internal compose and docker control paths.
+
+---
+
+## Disaster recovery and backup
+
+### Backup scope
+
+Back up at minimum:
+
+- PostgreSQL database (schema + data)
+- Uploaded reports/artifacts volume
+- Environment/configuration files
+- TLS certificates and keys
+
+### Suggested cadence
+
+- Daily full DB backup + frequent incremental/WAL archiving.
+- Keep at least one offsite/off-cluster encrypted copy.
+- Periodically verify restore integrity in a staging environment.
+
+### Restore checklist
+
+1. Provision clean stack and matching app version.
+2. Restore configuration and secrets.
+3. Restore DB and artifacts.
+4. Run migrations and integrity checks.
+5. Validate ops health checks and scan workflows.
+6. Re-enable external traffic after verification.
