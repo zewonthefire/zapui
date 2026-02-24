@@ -8,6 +8,7 @@ urlpatterns = [
     path('admin/', admin.site.urls),
     path('', RedirectView.as_view(pattern_name='dashboard', permanent=False)),
     path('', include('accounts.urls')),
+    path('', include('targets.urls')),
     path('health', views.health, name='health'),
     path('setup', views.setup, name='setup'),
     path('dashboard', views.dashboard, name='dashboard'),

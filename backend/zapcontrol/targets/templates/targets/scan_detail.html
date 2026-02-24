@@ -1,0 +1,21 @@
+{% extends "core/base.html" %}
+{% block title %}Scan Job #{{ job.id }}{% endblock %}
+{% block content %}
+<div class="card"><div class="card-body">
+  <h1 class="h4">Scan Job #{{ job.id }}</h1>
+  <dl class="row">
+    <dt class="col-sm-3">Project</dt><dd class="col-sm-9">{{ job.project }}</dd>
+    <dt class="col-sm-3">Target</dt><dd class="col-sm-9">{{ job.target }}</dd>
+    <dt class="col-sm-3">Profile</dt><dd class="col-sm-9">{{ job.profile }}</dd>
+    <dt class="col-sm-3">Node</dt><dd class="col-sm-9">{{ job.zap_node|default:'-' }}</dd>
+    <dt class="col-sm-3">Status</dt><dd class="col-sm-9">{{ job.get_status_display }}</dd>
+    <dt class="col-sm-3">Spider ID</dt><dd class="col-sm-9">{{ job.zap_spider_id|default:'-' }}</dd>
+    <dt class="col-sm-3">Active Scan ID</dt><dd class="col-sm-9">{{ job.zap_ascan_id|default:'-' }}</dd>
+    <dt class="col-sm-3">Error</dt><dd class="col-sm-9">{{ job.error_message|default:'-' }}</dd>
+  </dl>
+  {% if latest_raw %}
+    <h2 class="h5">Raw Alerts ({{ latest_raw.raw_alerts|length }})</h2>
+    <pre class="bg-light p-3 border rounded" style="max-height: 420px; overflow: auto;">{{ latest_raw.raw_alerts|pprint }}</pre>
+  {% endif %}
+</div></div>
+{% endblock %}

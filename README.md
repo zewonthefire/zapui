@@ -190,6 +190,42 @@ After finalization, nginx redirects all HTTP traffic to HTTPS on restart because
 - After scaling, ZapUI discovers running `zap` service containers and syncs `internal_managed` ZapNode records.
 - You can also run **Test all nodes** from `/ops/overview` or `/zapnodes`.
 
+
+## Scan orchestration (Celery + ZAP API)
+
+ZapUI now includes baseline scan orchestration with persisted profiles/jobs/results and support for multiple ZapNodes.
+
+### Scan types and flow
+
+- `baseline_like`: run spider (if enabled) then active scan, poll completion, fetch raw alerts.
+- `full_active`: same orchestration as baseline for now (spider + active scan), with profile-level controls for timeout/options.
+- `api_scan`: placeholder type; jobs are created but marked failed with `API scan is not implemented yet.`
+
+Execution is handled by Celery task `start_scan_job`:
+
+1. Resolve node (profile pinning or auto-select).
+2. Start spider and poll `/JSON/spider/view/status/` until complete (when enabled).
+3. Start active scan and poll `/JSON/ascan/view/status/` until complete.
+4. Fetch raw alerts via `/JSON/core/view/alerts/`.
+5. Persist `RawZapResult` and mark job complete.
+
+On transient node/network failures, task retries with backoff. If node failure persists or happens mid-scan after retries, the job is marked failed and **is not auto-migrated** to another node.
+
+### Node selection strategy
+
+Node selection for a `ScanJob` follows:
+
+1. If `ScanProfile.zap_node` is set, use that node only when it is enabled + healthy.
+2. Otherwise, choose an enabled+healthy node with the lowest count of currently running jobs.
+3. If no healthy node exists, fall back to the first enabled node.
+4. If no enabled node exists, fail job start.
+
+### UI paths
+
+- `/profiles`: create/update/delete scan profiles.
+- `/scans`: list scan jobs + submit new scan job.
+- `/scans/<id>`: job detail, ZAP IDs, and latest raw alerts payload.
+
 ## Installation
 
 ### Option A: Quick install (interactive)
