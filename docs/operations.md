@@ -177,11 +177,11 @@ No original content removed in this file.
 ## Operations Workflows Diagram
 ```mermaid
 flowchart TD
-  A[Admin requests action] --> B{Action type}
-  B -->|Restart service| C[/compose/restart/{service}]
-  B -->|Rebuild images| D[/compose/rebuild]
-  B -->|Redeploy stack| E[/compose/redeploy]
-  B -->|Scale service| F[/compose/scale]
+  A["Admin requests action"] --> B{"Action type"}
+  B -->|"Restart service"| C["/compose/restart/:service"]
+  B -->|"Rebuild images"| D["/compose/rebuild"]
+  B -->|"Redeploy stack"| E["/compose/redeploy"]
+  B -->|"Scale service"| F["/compose/scale"]
 ```
 
 ## Trust Boundaries in Operations
