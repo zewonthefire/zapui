@@ -82,6 +82,26 @@ class LoginAndRolesTests(TestCase):
         self.assertEqual(node.status, ZapNode.STATUS_HEALTHY)
 
 
+
+
+class OpsOverviewResilienceTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': True})
+        User = get_user_model()
+        self.admin = User.objects.create_user(email='admin2@example.com', password='Passw0rd!123', role='admin', is_staff=True)
+
+    @patch.dict(os.environ, {'ENABLE_OPS_AGENT': 'true'})
+    @patch('core.views._ops_get')
+    def test_ops_overview_handles_ops_api_failure_without_500(self, mock_ops_get):
+        mock_ops_get.side_effect = Exception('ops down')
+
+        self.client.login(username='admin2@example.com', password='Passw0rd!123')
+        response = self.client.get('/ops/overview', follow=True)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Ops agent is unavailable: ops down')
+        self.assertNotContains(response, 'Unable to list internal ZAP containers')
+
 class SetupWizardStepOneDefaultsTests(TestCase):
     def setUp(self):
         SetupState.objects.update_or_create(pk=1, defaults={'is_complete': False, 'current_step': 1})

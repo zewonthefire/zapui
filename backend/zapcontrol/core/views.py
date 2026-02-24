@@ -81,6 +81,14 @@ def _ops_post(path: str, **kwargs):
     return requests.post(f'{OPS_AGENT_URL}{path}', headers=_ops_headers(), timeout=120, **kwargs)
 
 
+def _friendly_ops_error(exc: Exception, fallback: str) -> str:
+    if isinstance(exc, requests.HTTPError) and getattr(exc, 'response', None) is not None:
+        return f'{fallback} (HTTP {exc.response.status_code}).'
+    if isinstance(exc, requests.RequestException):
+        return f'{fallback}.'
+    return f'{fallback}: {exc}'
+
+
 def _save_setting(key: str, value):
     Setting.objects.update_or_create(key=key, defaults={'value': value})
 
@@ -545,15 +553,17 @@ def ops_overview(request):
                 messages.success(request, f'Internal pool scaled to {replicas}. Registered {created}, disabled {disabled}.')
                 _audit_ops_action(request, 'scale_internal_pool', target=f'zap={replicas}', status=OpsAuditLog.STATUS_SUCCESS, result=f'registered={created},disabled={disabled}')
             except Exception as exc:
-                messages.error(request, f'Failed to scale internal pool: {exc}')
+                messages.error(request, _friendly_ops_error(exc, 'Failed to scale internal pool'))
                 _audit_ops_action(request, 'scale_internal_pool', target='zap', status=OpsAuditLog.STATUS_FAILED, result=str(exc))
             return redirect('ops-overview')
 
+    running_zap_containers = []
     if OPS_ENABLED:
         try:
             response = _ops_get('/compose/services')
             response.raise_for_status()
-            service_map = {row.get('Service'): row for row in response.json().get('services', [])}
+            services = response.json().get('services', [])
+            service_map = {row.get('Service'): row for row in services}
             for service in OPS_SERVICES:
                 row = service_map.get(service, {})
                 status_rows.append(
@@ -563,12 +573,16 @@ def ops_overview(request):
                         'status': row.get('Status', 'n/a'),
                     }
                 )
+
+            running_zap_containers = sorted(
+                row.get('Name')
+                for row in services
+                if row.get('Service') == 'zap' and str(row.get('State', '')).lower() == 'running' and row.get('Name')
+            )
         except Exception as exc:
-            messages.warning(request, f'Ops agent unavailable: {exc}')
+            messages.warning(request, _friendly_ops_error(exc, 'Ops agent is unavailable'))
     else:
         status_rows = [{'service': s, 'state': 'disabled', 'status': 'Enable ENABLE_OPS_AGENT=true + COMPOSE_PROFILES=ops'} for s in OPS_SERVICES]
-
-    running_zap_containers = _discover_internal_zap_containers() if OPS_ENABLED else []
     pool_setting = Setting.objects.filter(key='zap_internal_pool').first()
     desired_pool_size = (pool_setting.value or {}).get('desired_size', 1) if pool_setting else 1
 
