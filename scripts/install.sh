@@ -5,6 +5,7 @@ DEFAULT_INSTALL_DIR="${HOME}/zapui"
 DEFAULT_REPO_URL="https://github.com/zewonthefire/zapui"
 DEFAULT_HTTP_PORT="8090"
 DEFAULT_HTTPS_PORT="443"
+DEFAULT_PUBLIC_HOST="$(hostname -f 2>/dev/null || hostname 2>/dev/null || echo localhost)"
 
 color() { printf "\033[%sm%s\033[0m\n" "$1" "$2"; }
 status() { color "1;34" "[INFO] $*"; }
@@ -90,9 +91,17 @@ fi
 HTTP_DEFAULT="$(auto_env_value .env PUBLIC_HTTP_PORT "$DEFAULT_HTTP_PORT")"
 HTTPS_DEFAULT="$(auto_env_value .env PUBLIC_HTTPS_PORT "$DEFAULT_HTTPS_PORT")"
 OPS_DEFAULT="$(auto_env_value .env ENABLE_OPS_AGENT "false")"
+CSRF_ORIGINS_DEFAULT="$(auto_env_value .env DJANGO_CSRF_TRUSTED_ORIGINS "")"
+
+if [[ -n "$CSRF_ORIGINS_DEFAULT" ]]; then
+  CSRF_HOST_DEFAULT="$(printf '%s' "$CSRF_ORIGINS_DEFAULT" | cut -d',' -f1 | sed -E 's#^https?://##' | cut -d':' -f1)"
+else
+  CSRF_HOST_DEFAULT="$DEFAULT_PUBLIC_HOST"
+fi
 
 PUBLIC_HTTP_PORT="$(prompt_default "Public HTTP port" "$HTTP_DEFAULT")"
 PUBLIC_HTTPS_PORT="$(prompt_default "Public HTTPS port" "$HTTPS_DEFAULT")"
+PUBLIC_HOSTNAME="$(prompt_default "Public hostname for HTTPS/CSRF" "$CSRF_HOST_DEFAULT")"
 
 if [[ "${OPS_DEFAULT,,}" == "true" || "${OPS_DEFAULT,,}" == "1" || "${OPS_DEFAULT,,}" == "yes" ]]; then
   OPS_QUESTION_DEFAULT="yes"
@@ -113,6 +122,7 @@ upsert_env .env PUBLIC_HTTP_PORT "$PUBLIC_HTTP_PORT"
 upsert_env .env PUBLIC_HTTPS_PORT "$PUBLIC_HTTPS_PORT"
 upsert_env .env ENABLE_OPS_AGENT "$ENABLE_OPS_AGENT"
 upsert_env .env COMPOSE_PROFILES "$COMPOSE_PROFILES"
+upsert_env .env DJANGO_CSRF_TRUSTED_ORIGINS "https://${PUBLIC_HOSTNAME}:${PUBLIC_HTTPS_PORT}"
 ok "Updated .env values"
 
 BUILD_ACTION="$(prompt_yes_no "Build/rebuild images" "yes")"

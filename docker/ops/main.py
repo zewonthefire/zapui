@@ -18,6 +18,7 @@ SAFE_ENV_KEYS = [
     "PUBLIC_HTTPS_PORT",
     "DJANGO_DEBUG",
     "DJANGO_ALLOWED_HOSTS",
+    "DJANGO_CSRF_TRUSTED_ORIGINS",
     "POSTGRES_HOST",
     "POSTGRES_PORT",
     "CELERY_BROKER_URL",
@@ -34,12 +35,26 @@ class ScalePayload(BaseModel):
     replicas: int = Field(ge=0, le=50)
 
 
+class CsrfOriginPayload(BaseModel):
+    origin: str
+
+
 def _compose_cmd(*parts: str) -> list[str]:
     return ["docker", "compose", "--project-name", PROJECT_NAME, *parts]
 
 
 def _run_command(command: list[str]) -> subprocess.CompletedProcess[str]:
     return subprocess.run(command, cwd=PROJECT_DIR, text=True, capture_output=True, check=False)
+
+
+def _upsert_env_var(env_file: Path, key: str, value: str) -> None:
+    lines: list[str] = []
+    if env_file.exists():
+        lines = env_file.read_text().splitlines()
+
+    filtered = [line for line in lines if not line.startswith(f"{key}=")]
+    filtered.append(f"{key}={value}")
+    env_file.write_text("\n".join(filtered) + "\n")
 
 
 def _allowed_services() -> set[str]:
@@ -150,3 +165,26 @@ def compose_scale(payload: ScalePayload) -> dict[str, Any]:
 @app.get("/compose/env-summary", dependencies=[Depends(_auth)])
 def compose_env_summary() -> dict[str, str]:
     return {key: os.getenv(key, "") for key in SAFE_ENV_KEYS}
+
+
+@app.post("/compose/env/upsert-csrf-origin", dependencies=[Depends(_auth)])
+def compose_upsert_csrf_origin(payload: CsrfOriginPayload) -> dict[str, Any]:
+    origin = payload.origin.strip()
+    if not origin.startswith("https://"):
+        raise HTTPException(status_code=400, detail="origin must start with https://")
+    if any(ch in origin for ch in ("\n", "\r")):
+        raise HTTPException(status_code=400, detail="origin must be a single line")
+
+    env_file = PROJECT_DIR / ".env"
+    _upsert_env_var(env_file, "DJANGO_CSRF_TRUSTED_ORIGINS", origin)
+
+    result = _run_command(_compose_cmd("up", "-d", "--force-recreate", "web", "nginx"))
+    if result.returncode != 0:
+        raise HTTPException(status_code=500, detail=result.stderr.strip())
+
+    return {
+        "status": "ok",
+        "action": "upsert-csrf-origin",
+        "origin": origin,
+        "services": ["web", "nginx"],
+    }

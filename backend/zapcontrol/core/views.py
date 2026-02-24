@@ -241,6 +241,41 @@ def _wizard_step1_defaults(request: HttpRequest) -> tuple[str, str, str]:
     return base_url, default_http_port, default_https_port
 
 
+
+
+def _csrf_origin_from_setup_data(instance_data: dict[str, str]) -> str:
+    external_base_url = (instance_data.get('external_base_url') or '').strip()
+    display_https_port = (instance_data.get('display_https_port') or '').strip()
+    fallback_https_port = os.getenv('PUBLIC_HTTPS_PORT', '443').strip() or '443'
+
+    host = 'localhost'
+    if external_base_url:
+        parsed = urlparse(external_base_url if '://' in external_base_url else f'http://{external_base_url}')
+        if parsed.hostname:
+            host = parsed.hostname
+        if not display_https_port and parsed.port:
+            display_https_port = str(parsed.port)
+
+    https_port = display_https_port or fallback_https_port
+    return f'https://{host}:{https_port}'
+
+
+def _apply_csrf_origin(origin: str) -> tuple[bool, str]:
+    if OPS_ENABLED:
+        try:
+            response = _ops_post('/compose/env/upsert-csrf-origin', json={'origin': origin})
+            response.raise_for_status()
+            return True, f'Updated DJANGO_CSRF_TRUSTED_ORIGINS to {origin} and recreated web/nginx.'
+        except Exception as exc:
+            return False, _friendly_ops_error(exc, 'Unable to apply DJANGO_CSRF_TRUSTED_ORIGINS automatically')
+
+    return False, (
+        'Ops Agent disabled. Run: '
+        f"sed -i '/^DJANGO_CSRF_TRUSTED_ORIGINS=/d' .env && "
+        f"echo 'DJANGO_CSRF_TRUSTED_ORIGINS={origin}' >> .env && "
+        'docker compose up -d --force-recreate web nginx'
+    )
+
 def _get_database_config_from_post(post_data) -> dict[str, str]:
     mode = post_data.get('database_mode', 'integrated').strip() or 'integrated'
     config = {
@@ -347,12 +382,22 @@ def setup(request):
                         'display_http_port': display_http_port,
                         'display_https_port': display_https_port,
                     }
+                    csrf_origin = _csrf_origin_from_setup_data(data['instance'])
+                    csrf_ok, csrf_note = _apply_csrf_origin(csrf_origin)
+                    data['instance']['csrf_trusted_origin'] = csrf_origin
+                    data['instance']['csrf_trusted_origin_applied'] = csrf_ok
+                    data['instance']['csrf_trusted_origin_note'] = csrf_note
+
                     data['database'] = db_config
                     data['database_connectivity'] = db_note
                     _save_setting('instance', data['instance'])
                     _save_setting('database', db_config)
                     state.current_step = 2
                     messages.success(request, db_note)
+                    if csrf_ok:
+                        messages.success(request, csrf_note)
+                    else:
+                        messages.warning(request, csrf_note)
                 else:
                     messages.error(request, db_note)
 
