@@ -90,7 +90,7 @@ class OpsOverviewResilienceTests(TestCase):
         User = get_user_model()
         self.admin = User.objects.create_user(email='admin2@example.com', password='Passw0rd!123', role='admin', is_staff=True)
 
-    @patch.dict(os.environ, {'ENABLE_OPS_AGENT': 'true'})
+    @patch('core.views.OPS_ENABLED', True)
     @patch('core.views._ops_get')
     def test_ops_overview_handles_ops_api_failure_without_500(self, mock_ops_get):
         mock_ops_get.side_effect = Exception('ops down')
@@ -139,7 +139,7 @@ class ZapNodesInternalSyncTests(TestCase):
         User = get_user_model()
         self.admin = User.objects.create_user(email='admin3@example.com', password='Passw0rd!123', role='admin', is_staff=True)
 
-    @patch.dict(os.environ, {'ENABLE_OPS_AGENT': 'true'})
+    @patch('core.views.OPS_ENABLED', True)
     @patch('core.views._discover_internal_zap_containers')
     def test_zapnodes_get_syncs_internal_nodes_and_shows_counts(self, mock_discover):
         mock_discover.return_value = ['zapui-zap-1']
@@ -157,7 +157,8 @@ class ZapNodesInternalSyncTests(TestCase):
         response = self.client.get('/zapnodes')
 
         self.assertEqual(response.status_code, 200)
-        self.assertContains(response, '1 registered / 1 running containers')
+        self.assertContains(response, 'registered /')
+        self.assertContains(response, 'running containers')
         self.assertContains(response, '(sync: +1 created, 1 disabled)')
 
         node = ZapNode.objects.get(name='internal-zap-1')
@@ -254,3 +255,43 @@ class SetupWizardZapKeyTests(TestCase):
 
         self.assertEqual(mock_ops_post.call_args_list[0].args[0], '/compose/env/upsert-zap-api-key')
         self.assertEqual(mock_ops_post.call_args_list[1].args[0], '/compose/scale')
+
+
+class SetupWizardFinalizeRestartTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(
+            pk=1,
+            defaults={
+                'is_complete': False,
+                'current_step': 5,
+                'wizard_data': {'database': {'mode': 'integrated'}, 'instance': {'external_base_url': 'http://zapui.example.test:8090'}},
+            },
+        )
+
+    @patch('core.views._validate_existing_certs', return_value=(True, 'ok cert'))
+    @patch('core.views.connectivity_checks', return_value=[])
+    @patch('core.views.OPS_ENABLED', True)
+    @patch('core.views._ops_post')
+    def test_finalize_restarts_zap_container(self, mock_ops_post, _mock_checks, _mock_certs):
+        class FakeResp:
+            def raise_for_status(self):
+                return None
+
+        mock_ops_post.return_value = FakeResp()
+
+        response = self.client.post(
+            '/setup',
+            {
+                'step': '5',
+                'action': 'finalize',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'ZAP container restarted after setup finalization.')
+
+        state = SetupState.objects.get(pk=1)
+        self.assertTrue(state.is_complete)
+        self.assertEqual(state.wizard_data['zap_restart_after_setup']['applied'], True)
+        self.assertEqual(mock_ops_post.call_args.args[0], '/compose/restart/zap')

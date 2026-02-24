@@ -170,17 +170,21 @@ def _default_internal_zap_api_key() -> str:
 
 def _ensure_internal_zap_api_key() -> tuple[str, bool, str]:
     existing = Setting.objects.filter(key='internal_zap_api_key').first()
+    created = False
     if existing and existing.value:
-        return str(existing.value), True, 'Existing internal ZAP API key reused.'
-
-    api_key = _default_internal_zap_api_key()
-    _save_setting('internal_zap_api_key', api_key)
+        api_key = str(existing.value)
+    else:
+        api_key = _default_internal_zap_api_key()
+        _save_setting('internal_zap_api_key', api_key)
+        created = True
 
     if OPS_ENABLED:
         try:
             response = _ops_post('/compose/env/upsert-zap-api-key', json={'api_key': api_key})
             response.raise_for_status()
-            return api_key, True, 'Internal ZAP API key generated and applied to compose.'
+            if created:
+                return api_key, True, 'Internal ZAP API key generated and applied to compose.'
+            return api_key, True, 'Existing internal ZAP API key reapplied to compose.'
         except Exception as exc:
             return api_key, False, _friendly_ops_error(exc, 'Unable to apply internal ZAP API key automatically')
 
@@ -190,7 +194,6 @@ def _ensure_internal_zap_api_key() -> tuple[str, bool, str]:
         f"echo 'ZAP_API_KEY={api_key}' >> .env && "
         'docker compose up -d --force-recreate zap'
     )
-
 
 def _ensure_compose_internal_node(api_key: str) -> None:
     ZapNode.objects.update_or_create(
@@ -388,6 +391,17 @@ def _disable_internal_db() -> tuple[bool, str]:
     return False, 'Ops Agent disabled. Run: docker compose stop db (after applying external DB env and restarting services).'
 
 
+def _restart_zap_after_setup() -> tuple[bool, str]:
+    if OPS_ENABLED:
+        try:
+            response = _ops_post('/compose/restart/zap')
+            response.raise_for_status()
+            return True, 'ZAP container restarted after setup finalization.'
+        except Exception as exc:
+            return False, _friendly_ops_error(exc, 'Unable to restart ZAP container automatically')
+
+    return False, 'Ops Agent disabled. Run: docker compose restart zap'
+
 def health(request):
     return JsonResponse({'status': 'ok'})
 
@@ -566,6 +580,15 @@ def setup(request):
             if failed:
                 messages.warning(request, 'Some health checks failed. You can still finalize if intentional.')
 
+            restart_ok, restart_note = _restart_zap_after_setup()
+            data['zap_restart_after_setup'] = {
+                'applied': restart_ok,
+                'note': restart_note,
+            }
+            if restart_ok:
+                messages.success(request, restart_note)
+            else:
+                messages.warning(request, restart_note)
             SETUP_FLAG_PATH.parent.mkdir(parents=True, exist_ok=True)
             SETUP_FLAG_PATH.write_text('complete\n')
             state.is_complete = True
