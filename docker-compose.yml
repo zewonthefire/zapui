@@ -1,0 +1,103 @@
+services:
+  nginx:
+    build:
+      context: .
+      dockerfile: docker/nginx/Dockerfile
+    depends_on:
+      - web
+    ports:
+      - "${PUBLIC_HTTP_PORT:-8090}:8080"
+      - "${PUBLIC_HTTPS_PORT:-443}:8443"
+    volumes:
+      - ./certs:/certs
+      - ./nginx/state:/nginx-state
+      - ./nginx/conf.d:/etc/nginx/conf.d
+      - static:/static
+      - media:/media
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+      - zap
+    volumes:
+      - static:/app/staticfiles
+      - media:/app/mediafiles
+      - ./certs:/certs
+      - ./nginx/state:/nginx-state
+    restart: unless-stopped
+
+  worker:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+    command: ["celery", "-A", "zapcontrol", "worker", "-l", "info"]
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - media:/app/mediafiles
+    restart: unless-stopped
+
+  beat:
+    build:
+      context: .
+      dockerfile: docker/web/Dockerfile
+    command: ["celery", "-A", "zapcontrol", "beat", "-l", "info"]
+    env_file:
+      - .env
+    depends_on:
+      - db
+      - redis
+    volumes:
+      - media:/app/mediafiles
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+
+  db:
+    image: postgres:16-alpine
+    env_file:
+      - .env
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-zapui}
+      POSTGRES_USER: ${POSTGRES_USER:-zapui}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zapui}
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    restart: unless-stopped
+
+  zap:
+    image: zaproxy/zap-stable
+    command: ["zap.sh", "-daemon", "-host", "0.0.0.0", "-port", "8090", "-config", "api.disablekey=true", "-config", "api.addrs.addr.name=.*", "-config", "api.addrs.addr.regex=true"]
+    expose:
+      - "8090"
+    restart: unless-stopped
+
+  pdf:
+    build:
+      context: .
+      dockerfile: docker/pdf/Dockerfile
+    restart: unless-stopped
+
+  ops:
+    build:
+      context: .
+      dockerfile: docker/ops/Dockerfile
+    profiles: ["ops"]
+    restart: unless-stopped
+
+volumes:
+  db_data:
+  media:
+  static:
