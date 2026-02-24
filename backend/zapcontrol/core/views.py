@@ -20,7 +20,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from targets.models import ZapNode
+from targets.models import Project, RiskSnapshot, Target, ZapNode
 
 from .models import Setting, SetupState
 
@@ -450,7 +450,20 @@ def setup(request):
 
 @login_required
 def dashboard(request):
-    return render(request, 'core/dashboard.html')
+    latest_global = RiskSnapshot.objects.filter(project__isnull=True, target__isnull=True).first()
+    trends = list(
+        RiskSnapshot.objects.filter(project__isnull=True, target__isnull=True)
+        .order_by('-created_at')[:10]
+        .values('created_at', 'risk_score')
+    )
+    trends.reverse()
+    projects = Project.objects.order_by('name')
+    targets = Target.objects.select_related('project').order_by('project__name', 'name')
+    return render(
+        request,
+        'core/dashboard.html',
+        {'latest_global': latest_global, 'trends': trends, 'projects': projects, 'targets': targets},
+    )
 
 
 @login_required

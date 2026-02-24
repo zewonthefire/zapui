@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Project, RawZapResult, ScanJob, ScanProfile, Target, ZapNode
+from .models import Finding, FindingInstance, Project, RawZapResult, RiskSnapshot, ScanJob, ScanProfile, Target, ZapNode
 
 
 @admin.register(ZapNode)
@@ -41,3 +41,23 @@ class ScanJobAdmin(admin.ModelAdmin):
 class RawZapResultAdmin(admin.ModelAdmin):
     list_display = ('id', 'scan_job', 'fetched_at')
     search_fields = ('scan_job__id',)
+
+
+@admin.register(Finding)
+class FindingAdmin(admin.ModelAdmin):
+    list_display = ('id', 'target', 'zap_plugin_id', 'title', 'severity', 'instances_count', 'first_seen', 'last_seen')
+    list_filter = ('severity',)
+    search_fields = ('title', 'zap_plugin_id', 'target__name', 'target__project__name')
+
+
+@admin.register(FindingInstance)
+class FindingInstanceAdmin(admin.ModelAdmin):
+    list_display = ('id', 'finding', 'scan_job', 'url', 'parameter', 'created_at')
+    search_fields = ('finding__title', 'url', 'parameter', 'scan_job__id')
+
+
+@admin.register(RiskSnapshot)
+class RiskSnapshotAdmin(admin.ModelAdmin):
+    list_display = ('id', 'project', 'target', 'scan_job', 'risk_score', 'created_at')
+    list_filter = ('project', 'target')
+    search_fields = ('scan_job__id', 'project__name', 'target__name')

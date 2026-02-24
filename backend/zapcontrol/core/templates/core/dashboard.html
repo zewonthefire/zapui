@@ -1,8 +1,55 @@
 {% extends "core/base.html" %}
 {% block title %}Dashboard{% endblock %}
 {% block content %}
-<div class="p-4 bg-body-tertiary rounded-3 border">
-  <h1 class="h3">ZapUI Dashboard</h1>
-  <p class="text-muted mb-0">Setup is complete. Use operations and upcoming scan workflows from this control plane.</p>
+<div class="p-4 bg-body-tertiary rounded-3 border mb-4">
+  <h1 class="h3">Risk Dashboard</h1>
+  <p class="mb-1">Overall risk score: <strong>{{ latest_global.risk_score|default:"0" }}</strong></p>
+  <small class="text-muted">Weighted by severity (High/Medium/Low/Info).</small>
+</div>
+
+<div class="row g-3 mb-4">
+  <div class="col-12 col-lg-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h5">Global risk trend</h2>
+        {% if trends %}
+        <ul class="mb-0">
+          {% for point in trends %}
+          <li>{{ point.created_at }} — {{ point.risk_score }}</li>
+          {% endfor %}
+        </ul>
+        {% else %}
+        <p class="text-muted mb-0">No risk snapshots yet.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+  <div class="col-12 col-lg-6">
+    <div class="card h-100">
+      <div class="card-body">
+        <h2 class="h5">Projects</h2>
+        <ul class="mb-0">
+          {% for project in projects %}
+          <li><a href="/projects/{{ project.id }}">{{ project.name }}</a></li>
+          {% empty %}
+          <li class="text-muted">No projects.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="card">
+  <div class="card-body">
+    <h2 class="h5">Targets</h2>
+    <ul class="mb-0">
+      {% for target in targets %}
+      <li><a href="/targets/{{ target.id }}">{{ target.project.name }} / {{ target.name }}</a></li>
+      {% empty %}
+      <li class="text-muted">No targets.</li>
+      {% endfor %}
+    </ul>
+  </div>
 </div>
 {% endblock %}

@@ -1,9 +1,10 @@
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
+from django.db.models import OuterRef, Subquery
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .models import ScanJob, ScanProfile
+from .models import Finding, RiskSnapshot, ScanJob, ScanProfile, Target, Project
 from .tasks import start_scan_job
 
 
@@ -85,3 +86,32 @@ def scan_detail(request, scan_id: int):
     )
     latest_raw = job.raw_results.first()
     return render(request, 'targets/scan_detail.html', {'job': job, 'latest_raw': latest_raw})
+
+
+@login_required
+def project_detail(request, project_id: int):
+    project = get_object_or_404(Project, pk=project_id)
+    latest_project_risk = project.risk_snapshots.filter(target__isnull=True).first()
+    latest_target_snapshot = RiskSnapshot.objects.filter(target=OuterRef('pk'), project__isnull=True).order_by('-created_at')
+    top_targets = (
+        Target.objects.filter(project=project)
+        .annotate(latest_risk=Subquery(latest_target_snapshot.values('risk_score')[:1]))
+        .order_by('-latest_risk', 'name')[:10]
+    )
+    return render(
+        request,
+        'targets/project_detail.html',
+        {'project': project, 'latest_project_risk': latest_project_risk, 'top_targets': top_targets},
+    )
+
+
+@login_required
+def target_detail(request, target_id: int):
+    target = get_object_or_404(Target.objects.select_related('project'), pk=target_id)
+    latest_target_risk = target.risk_snapshots.filter(project__isnull=True).first()
+    open_findings = Finding.objects.filter(target=target).order_by('-severity', '-last_seen')
+    return render(
+        request,
+        'targets/target_detail.html',
+        {'target': target, 'latest_target_risk': latest_target_risk, 'open_findings': open_findings},
+    )

@@ -226,6 +226,60 @@ Node selection for a `ScanJob` follows:
 - `/scans`: list scan jobs + submit new scan job.
 - `/scans/<id>`: job detail, ZAP IDs, and latest raw alerts payload.
 
+
+## Findings normalization and risk scoring
+
+ZapUI now normalizes raw ZAP alerts into long-lived finding entities and computes weighted risk snapshots.
+
+### Data model
+
+- `Finding`: deduplicated issue record scoped to `(target, zap_plugin_id, title)`.
+  - Tracks `first_seen`, `last_seen`, severity, and `instances_count`.
+- `FindingInstance`: concrete occurrence for a finding keyed by URL/parameter/evidence and linked to the source scan job.
+- `RiskSnapshot`: point-in-time weighted score with nullable scope fields:
+  - Target scope: `target` set, `project` null
+  - Project scope: `project` set, `target` null
+  - Global scope: both null
+
+### Normalization workflow
+
+On scan completion, ZapUI fetches raw alerts and then:
+
+1. Deduplicates alerts by `(target, zap_plugin_id, title)` into `Finding`.
+2. Stores each occurrence as a `FindingInstance` using URL/param/evidence granularity.
+3. Updates `first_seen`/`last_seen` and recomputes each finding's `instances_count`.
+
+### Risk model and weights
+
+Default severity weights are:
+
+- High = 10
+- Medium = 5
+- Low = 2
+- Info = 1
+
+Weights are configurable through `core.Setting` using key `risk_weights` JSON, for example:
+
+```json
+{ "High": 12, "Medium": 6, "Low": 2, "Info": 1 }
+```
+
+Risk score formula per scope:
+
+`risk_score = High*W_high + Medium*W_medium + Low*W_low + Info*W_info`
+
+### Risk views
+
+- `/dashboard`: overall (global) risk score and recent trend snapshots.
+- `/projects/<id>`: project risk score and top risky targets.
+- `/targets/<id>`: target risk score and open findings.
+
+### Interpretation
+
+- A score increase means the weighted open finding inventory increased.
+- A score decrease means findings were reduced or shifted to lower severities.
+- Because this score is weighted counts (not exploitability), use it as a triage/monitoring signal rather than a standalone security verdict.
+
 ## Installation
 
 ### Option A: Quick install (interactive)
