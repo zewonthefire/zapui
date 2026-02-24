@@ -53,26 +53,26 @@ upsert_env() {
   fi
 }
 
-upsert_compose_zap_key() {
-  local compose_file="$1"; local value="$2"
+ensure_compose_zap_key_uses_env() {
+  local compose_file="$1"
   if [[ ! -f "$compose_file" ]]; then
     warn "docker-compose.yml not found, skipping compose ZAP_API_KEY sync"
     return
   fi
 
-  python3 - "$compose_file" "$value" <<'PY'
+  python3 - "$compose_file" <<'PY'
 from pathlib import Path
 import sys
 
 compose_path = Path(sys.argv[1])
-api_key = sys.argv[2]
 target = "      ZAP_API_KEY:"
+desired = "      ZAP_API_KEY: ${ZAP_API_KEY:-change-me-zap-key}"
 
 lines = compose_path.read_text().splitlines()
 updated = False
 for idx, line in enumerate(lines):
     if line.startswith(target):
-        lines[idx] = f'{target} "{api_key}"'
+        lines[idx] = desired
         updated = True
         break
 
@@ -82,7 +82,7 @@ if not updated:
 compose_path.write_text("\n".join(lines) + "\n")
 PY
 
-  ok "Synchronized docker-compose.yml ZAP_API_KEY"
+  ok "Normalized docker-compose.yml ZAP_API_KEY to read from .env"
 }
 
 random_api_key() {
@@ -142,7 +142,7 @@ else
   ok "Keeping existing internal ZAP API key from .env"
 fi
 
-upsert_compose_zap_key "docker-compose.yml" "$ACTIVE_ZAP_API_KEY"
+ensure_compose_zap_key_uses_env "docker-compose.yml"
 
 HTTP_DEFAULT="$(auto_env_value .env PUBLIC_HTTP_PORT "$DEFAULT_HTTP_PORT")"
 HTTPS_DEFAULT="$(auto_env_value .env PUBLIC_HTTPS_PORT "$DEFAULT_HTTPS_PORT")"
