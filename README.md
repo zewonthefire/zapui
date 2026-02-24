@@ -1,452 +1,169 @@
-# ZapUI Skeleton: Dockerized ZAP Control Center Bootstrap
-
-This repository now provides an **initial skeleton** for a future ZAP Control Center UI focused on:
-
-- Projects
-- Targets
-- Scans
-- Findings
-- Risk scoring
-- Evolution/trending
-
-> This repo now includes a first-run setup wizard with persistence, TLS handling, and initial ZAP configuration.
-
-## What this skeleton includes
-
-- Single `docker-compose.yml` at repo root
-- Nginx reverse proxy with HTTP + HTTPS
-- Temporary TLS generation on boot if certs are missing
-- Minimal Django app (`backend/zapcontrol`) behind Gunicorn
-- Django authentication foundation with a custom user model and role support
-- Celery worker + beat placeholders
-- PostgreSQL + Redis
-- Internal-only OWASP ZAP daemon (`zaproxy/zap-stable`) on the compose network
-- Placeholder PDF container (`wkhtmltopdf` image-based)
-- FastAPI Ops Agent (profile-gated, disabled by default)
-- Interactive installer script (`scripts/install.sh`)
-- Operator Makefile targets for lifecycle tasks
-
-## Architecture overview
-
-```text
-Host ports
-  PUBLIC_HTTP_PORT (default 8090)  ---> nginx:8080
-  PUBLIC_HTTPS_PORT (default 443)  ---> nginx:8443
-
-nginx -> web (gunicorn Django)
-web   -> db (PostgreSQL)
-web   -> redis
-web   -> zap:8090 (internal only)
-worker/beat -> redis + db
-```
-
-### Services
-
-- `nginx`: TLS termination and reverse proxy for Django
-- `web`: Django + Gunicorn (includes migrations + collectstatic on startup)
-- `worker`: Celery worker placeholder runtime
-- `beat`: Celery beat placeholder runtime
-- `redis`: broker/cache backend
-- `db`: PostgreSQL database
-- `zap`: OWASP ZAP daemon mode; exposed only inside Docker network
-- `pdf`: placeholder microservice (wkhtmltopdf installed)
-- `ops`: FastAPI operations agent (disabled unless profile `ops` is enabled)
-
-## Nginx behavior
-
-Nginx uses file flag `./nginx/state/setup_complete` (mounted at `/nginx-state/setup_complete`).
-
-- If the flag **exists**: HTTP redirects to HTTPS.
-- If the flag is **missing**: HTTP proxies to Django so setup can run on first boot.
-
-HTTPS server is always defined and uses:
-
-- `/certs/fullchain.pem`
-- `/certs/privkey.pem`
-
-If missing, the nginx entrypoint generates a temporary self-signed certificate so startup does not fail.
-
-## Authentication and role model
-
-The Django foundation now uses a custom user model (`accounts.User`) with email-based login and three built-in roles:
-
-- `admin`
-- `security_engineer`
-- `readonly`
-
-Authentication routes:
-
-- `GET/POST /login`
-- `GET /logout`
-- `GET /dashboard` (requires login)
-
-Admin remains available at `/admin/`.
-
-## Basic navigation and endpoints
-
-UI shell includes Bootstrap navigation and a full first-run setup wizard at `/setup`.
-
-Application/API endpoints currently available:
-
-- `GET /health` -> `{"status":"ok"}`
-- `GET/POST /setup` -> multi-step first-run setup wizard
-- `GET /dashboard` -> authenticated dashboard shell
-- `GET /api/version` -> `{"name":"zapcontrol","version":"..."}`
-
-
-## Operations subsystem (baseline)
-
-The repo now includes an Operations subsystem with:
-
-- `ops` FastAPI service for container monitoring and lifecycle tasks.
-- Django admin-only operations pages:
-  - `/ops/overview` (service status + connectivity checks)
-  - `/ops/logs/<service>` (tail logs)
-  - `/ops/actions` (restart/rebuild/redeploy with password re-confirmation)
-
-### Security model
-
-- **Ops Agent is disabled by default.**
-- Controlled by `ENABLE_OPS_AGENT=false` (default).
-- Enable by setting:
-  - `ENABLE_OPS_AGENT=true`
-  - `OPS_AGENT_TOKEN=<strong secret>`
-  - `COMPOSE_PROFILES=ops`
-- Agent listens only on the internal compose network (`ops:8091`) and has no host port mapping.
-- Agent requires `X-OPS-TOKEN` header for privileged compose endpoints.
-- Agent enforces a strict service allowlist derived from this compose project (`COMPOSE_PROJECT_NAME`).
-
-### Docker socket warning
-
-When `ops` runs, it mounts `/var/run/docker.sock` and project directory into the agent container so it can execute:
-
-- `docker compose build <services>`
-- `docker compose up -d --no-deps <services>`
-
-Treat the ops container as highly privileged. Use a strong `OPS_AGENT_TOKEN`, restrict who can access internal services, and keep ops disabled unless needed.
-
-### Common workflows
-
-Restart `web` from UI:
-
-1. Open `/ops/actions` as an admin user.
-2. Select restart + service `web`.
-3. Re-enter your password to confirm.
-
-Rebuild and redeploy `web` from UI:
-
-1. Open `/ops/actions`.
-2. Use `rebuild` with services `web`.
-3. Use `redeploy` with services `web`.
-4. Confirm each action with password re-auth.
-
-Read-only mode when disabled:
-
-- `/ops/overview` still shows DB/Redis/ZAP connectivity tests and node inventory.
-- Action pages display clear enablement instructions.
-
-
-## Setup wizard walkthrough
-
-The wizard is available on `http://<host>:<PUBLIC_HTTP_PORT>/setup` while setup is incomplete.
-
-Steps:
-
-1. **Instance settings + database**: instance name, external base URL, display HTTP port reference, and database mode (integrated by default or external PostgreSQL with connectivity test).
-2. **First admin user**: creates the initial admin account with strong password validation.
-3. **TLS**: either generate a self-signed cert with SANs (`localhost`, `127.0.0.1`, external hostname) or validate an existing cert/key pair in `./certs`.
-4. **ZAP configuration**: choose desired internal pool size (default `1`), optionally register one external ZAP node, and run connectivity checks.
-5. **Finalize**: run health checks (including DB mode-specific connectivity), write `nginx/state/setup_complete`, and display the final HTTPS URL.
-
-After finalization, nginx redirects all HTTP traffic to HTTPS on restart because the setup flag exists.
-
-- If external DB is selected, the wizard stores runtime DB env overrides and attempts to disable the internal `db` service (via Ops Agent when enabled).
-- If Ops Agent is disabled, wizard provides the manual stop command for internal DB after external DB cutover.
-- Wizard progress is persisted server-side, and `/setup?step=<n>` resume links are shown to tolerate HTTP↔HTTPS transitions during setup.
-
-## ZAP pool size and scaling
-
-- Default pool size is `1` internal `zap` container.
-- `/ops/overview` can scale up or down using one compose stack only (no extra compose files).
-- Shrinking the pool disables stale internal ZapNode records instead of hard-deleting them.
-- If Ops Agent is disabled, use manual command `make scale-zap N=<count>`.
-
-## ZapNode management
-
-- Open `/zapnodes` as an admin user to manage node inventory.
-- **External nodes**:
-  - Add with `name`, `base_url`, and optional `api_key`.
-  - Use **Test** (per-node) or **Test all nodes** to call `/JSON/core/view/version/` and store status, latency, and timestamp.
-  - Remove external nodes directly from the UI.
-- **Internal managed nodes**:
-  - Created automatically when internal pool scaling is applied.
-  - Node records keep `docker_container_name` and internal service URL (`http://<container_name>:8090`).
-  - When pool is reduced, missing containers are retained as disabled records for history/audit.
-
-## Internal pool scaling (single compose file)
-
-- Use `/ops/overview` (admin only) to set **Desired pool size** and apply.
-- With Ops Agent enabled, ZapUI runs `docker compose up -d --scale zap=N` through the agent API.
-- After scaling, ZapUI discovers running `zap` service containers and syncs `internal_managed` ZapNode records.
-- You can also run **Test all nodes** from `/ops/overview` or `/zapnodes`.
-
-
-## Scan orchestration (Celery + ZAP API)
-
-ZapUI now includes baseline scan orchestration with persisted profiles/jobs/results and support for multiple ZapNodes.
-
-### Scan types and flow
-
-- `baseline_like`: run spider (if enabled) then active scan, poll completion, fetch raw alerts.
-- `full_active`: same orchestration as baseline for now (spider + active scan), with profile-level controls for timeout/options.
-- `api_scan`: placeholder type; jobs are created but marked failed with `API scan is not implemented yet.`
-
-Execution is handled by Celery task `start_scan_job`:
-
-1. Resolve node (profile pinning or auto-select).
-2. Start spider and poll `/JSON/spider/view/status/` until complete (when enabled).
-3. Start active scan and poll `/JSON/ascan/view/status/` until complete.
-4. Fetch raw alerts via `/JSON/core/view/alerts/`.
-5. Persist `RawZapResult` and mark job complete.
-
-On transient node/network failures, task retries with backoff. If node failure persists or happens mid-scan after retries, the job is marked failed and **is not auto-migrated** to another node.
-
-### Node selection strategy
-
-Node selection for a `ScanJob` follows:
-
-1. If `ScanProfile.zap_node` is set, use that node only when it is enabled + healthy.
-2. Otherwise, choose an enabled+healthy node with the lowest count of currently running jobs.
-3. If no healthy node exists, fall back to the first enabled node.
-4. If no enabled node exists, fail job start.
-
-### UI paths
-
-- `/profiles`: create/update/delete scan profiles.
-- `/scans`: list scan jobs + submit new scan job.
-- `/scans/<id>`: job detail, ZAP IDs, and latest raw alerts payload.
-
-
-## Findings normalization and risk scoring
-
-ZapUI now normalizes raw ZAP alerts into long-lived finding entities and computes weighted risk snapshots.
-
-### Data model
-
-- `Finding`: deduplicated issue record scoped to `(target, zap_plugin_id, title)`.
-  - Tracks `first_seen`, `last_seen`, severity, and `instances_count`.
-- `FindingInstance`: concrete occurrence for a finding keyed by URL/parameter/evidence and linked to the source scan job.
-- `RiskSnapshot`: point-in-time weighted score with nullable scope fields:
-  - Target scope: `target` set, `project` null
-  - Project scope: `project` set, `target` null
-  - Global scope: both null
-
-### Normalization workflow
-
-On scan completion, ZapUI fetches raw alerts and then:
-
-1. Deduplicates alerts by `(target, zap_plugin_id, title)` into `Finding`.
-2. Stores each occurrence as a `FindingInstance` using URL/param/evidence granularity.
-3. Updates `first_seen`/`last_seen` and recomputes each finding's `instances_count`.
-
-### Risk model and weights
-
-Default severity weights are:
-
-- High = 10
-- Medium = 5
-- Low = 2
-- Info = 1
-
-Weights are configurable through `core.Setting` using key `risk_weights` JSON, for example:
-
-```json
-{ "High": 12, "Medium": 6, "Low": 2, "Info": 1 }
-```
-
-Risk score formula per scope:
-
-`risk_score = High*W_high + Medium*W_medium + Low*W_low + Info*W_info`
-
-### Risk views
-
-- `/dashboard`: overall (global) risk score and recent trend snapshots.
-- `/projects/<id>`: project risk score and top risky targets.
-- `/targets/<id>`: target risk score and open findings.
-
-### Interpretation
-
-- A score increase means the weighted open finding inventory increased.
-- A score decrease means findings were reduced or shifted to lower severities.
-- Because this score is weighted counts (not exploitability), use it as a triage/monitoring signal rather than a standalone security verdict.
-
-## Repository documentation map
-
-To keep docs close to implementation, additional folder-level READMEs are now available:
-
-- `backend/README.md`
-- `backend/zapcontrol/README.md`
-- `docker/README.md`
-- `docker/web/README.md`
-- `docker/nginx/README.md`
-- `docker/ops/README.md`
-- `docker/pdf/README.md`
-- `nginx/README.md`
-- `scripts/README.md`
-
-## Installation
-
-### Option A: Quick install (interactive)
-
+# ZapUI
+
+ZapUI is a Dockerized control plane for OWASP ZAP scanning operations. It provides a guided setup wizard, multi-node scan orchestration, findings normalization, risk scoring, and evolution tracking so teams can move from raw scanner output to actionable, historical security operations.
+
+## What this tool is
+ZapUI is built for operators and security teams who need:
+- central management of projects and targets/assets
+- reusable scan profiles and queued scan jobs
+- support for internal and external ZAP nodes
+- persistent findings history instead of one-off raw alerts
+- weighted risk scoring and trend/evolution analysis
+- an install-and-operate model that works for fresh deployment and reconfiguration
+
+## Core concepts
+
+### Project
+A logical application/security ownership boundary (example: `payments-api`).
+
+### Target / Asset
+A concrete URL/service/environment inside a project that can be scanned.
+
+### Zap Node
+Execution backend for scans.
+- **internal_managed**: compose-managed ZAP daemon(s)
+- **external**: remote ZAP endpoint added by operators
+
+### Profile
+Reusable scan template controlling scan type, spider behavior, node pinning, and max duration.
+
+### Job
+A single scan execution binding project + target + profile. Jobs move through pending/running/completed/failed.
+
+### Findings
+Normalized vulnerability records deduplicated by target + plugin + title, with finding instances and first/last seen lifecycle.
+
+### Risk
+Weighted severity scoring snapshots captured at:
+- target scope
+- project scope
+- global scope
+
+### Evolution
+Comparison of consecutive completed scans for a target:
+- new findings
+- resolved findings
+- risk delta
+
+## Architecture at a glance
+- `nginx`: ingress + TLS termination + setup redirect behavior
+- `web` (Django/Gunicorn): UI/API, setup wizard, orchestration triggers
+- `worker`/`beat` (Celery): async scan execution and scheduling
+- `db` (PostgreSQL): primary persistence
+- `redis`: broker/cache
+- `zap`: internal ZAP daemon(s)
+- `pdf`: report rendering helper
+- `ops` (optional): privileged compose operations agent
+
+See full docs:
+- `docs/architecture.md`
+- `docs/security.md`
+- `docs/operations.md`
+- `docs/api.md`
+
+## Installation guide
+
+### Option A: Interactive installer (recommended)
+Run:
 ```bash
 bash scripts/install.sh
 ```
 
-### Option B: Manual install
+Installer capabilities:
+- safe to re-run (idempotent)
+- prompts for install dir/repo/ports
+- can pull latest code
+- can toggle ops profile
+- can rebuild images and re-apply compose
+- updates `.env` values consistently
 
-```bash
-git clone https://github.com/zewonthefire/zapui ~/zapui
-cd ~/zapui
-cp .env.example .env
-mkdir -p certs nginx/state nginx/conf.d
-docker compose up -d --build
-```
+After install, open:
+- `http://localhost:<PUBLIC_HTTP_PORT>/setup`
 
-## Configuration
+### Option B: Manual installation
+1. Clone repository.
+2. Create `.env` from `.env.example` and set required values.
+3. Create runtime dirs:
+   - `certs/`
+   - `nginx/state/`
+   - `nginx/conf.d/`
+4. Build and start stack:
+   ```bash
+   docker compose build
+   docker compose up -d
+   ```
+5. Complete `/setup` wizard.
 
-All environment values live in `.env`.
+## Setup wizard summary
+Wizard is stateful and can resume. Steps:
+1. Instance settings + DB mode (integrated/external PostgreSQL)
+2. First admin user creation
+3. TLS (generate self-signed or validate provided cert/key)
+4. ZAP pool and optional external node connectivity test
+5. Finalization and setup completion flag
 
-Key values:
-
-- `PUBLIC_HTTP_PORT` (default `8090`)
-- `PUBLIC_HTTPS_PORT` (default `443`)
-- `ENABLE_OPS_AGENT` (`no` default)
-- `COMPOSE_PROFILES` (set to `ops` to enable `ops` service)
-- `DJANGO_*` settings
-- `POSTGRES_*` settings
-- `CELERY_*` settings
-
-## Makefile shortcuts
-
-- `make up` - start containers
-- `make down` - stop containers
-- `make logs` - stream logs
-- `make migrate` - run Django migrations in `web`
-- `make collectstatic` - collect static assets in `web`
-- `make rebuild` - build + start
-- `make scale-zap N=<count>` - scale internal ZAP replicas manually when ops agent is disabled
-
-## Django admin bootstrap
-
-Create an admin user from the web container:
-
-```bash
-docker compose exec web python manage.py createsuperuser
-```
-
-After creating the account, sign in at `/login` or `/admin/`.
-
-## Migrations workflow in Docker
-
-Use these as the default migration workflow:
-
-```bash
-docker compose exec web python manage.py makemigrations
-docker compose exec web python manage.py migrate
-```
-
-For a fresh bootstrap run, `web` startup already executes migrations automatically, but explicit commands above are recommended when iterating on models.
+## Production notes
+- Replace all defaults and weak secrets.
+- Use trusted TLS certificates.
+- Restrict `DJANGO_ALLOWED_HOSTS`.
+- Keep backups and verify restore process.
+- Consider external managed PostgreSQL for production durability.
+- Ensure observability/log retention for web/worker/nginx and scan workflows.
 
 ## Security notes
 
-- CSRF middleware is enabled.
-- Session and CSRF cookies are configured to be secure in HTTPS environments.
-- Session expiry defaults to 8 hours (`SESSION_COOKIE_AGE`) and can be tuned via env vars.
-- First-run HTTP is intentionally available for setup flow bootstrapping.
-- Add `nginx/state/setup_complete` once setup is done to force HTTP->HTTPS redirect.
-- Replace temporary certs with trusted certificates in `./certs`.
-- ZAP API is internal-only by default (no host port binding).
-- If you choose to expose ZAP for local debugging, bind to loopback only, for example `127.0.0.1:8090:8090` (never `0.0.0.0`).
-- Ops Agent is disabled by default because agent capabilities can expand operational blast radius if compromised.
+### Ops Agent warning
+Ops Agent is **disabled by default**. If enabled, it can run compose operations and is security-sensitive.
+
+### Docker socket warning
+Ops Agent mounts `/var/run/docker.sock`, which is a high-privilege boundary. Treat access as host-level privileged access.
+
+### Minimum controls
+- strong `OPS_AGENT_TOKEN`
+- least-privilege network exposure
+- limit admin users
+- rotate credentials and monitor audit logs
 
 ## Troubleshooting
+- **Redirected to setup unexpectedly**: check setup completion state and `nginx/state/setup_complete`.
+- **Cannot login**: ensure setup finished and admin account exists.
+- **Node test fails**: verify node URL/API key/network reachability.
+- **Scans not progressing**: inspect worker/redis/db connectivity and task logs.
+- **HTTPS errors**: verify `certs/fullchain.pem` and `certs/privkey.pem`.
+- **Ops controls unavailable**: confirm `ENABLE_OPS_AGENT=true`, `COMPOSE_PROFILES=ops`, and valid token.
 
-### Services won’t boot
+## Backup/restore strategy
+Back up these assets together:
+- `db_data` volume (database)
+- `media_data` volume (reports/files)
+- `certs/` (TLS materials)
+- `nginx/state/` (setup completion and runtime state)
 
-```bash
-docker compose ps
-docker compose logs --tail=200 nginx web db redis zap
-```
+Recommended approach:
+- scheduled volume snapshots + DB dumps
+- off-host encrypted copies
+- retention policy and restore drills
 
-### Health check test
+Restore outline:
+1. Stop stack.
+2. Restore DB/media/certs/nginx state.
+3. Start stack.
+4. Validate health, auth, and recent reporting data.
 
-```bash
-curl -i http://localhost:8090/health
-```
+## Upgrade strategy
+1. Take full backup.
+2. Pull latest code (or re-run installer with pull enabled).
+3. Rebuild images and apply compose updates.
+4. Verify migrations/boot logs.
+5. Smoke-test login, node connectivity, scan lifecycle, reports, evolution pages.
+6. Roll back by restoring backup if regression appears.
 
-### Verify ZAP internal connectivity from web container
-
-```bash
-docker compose exec web python - <<'PY'
-import requests
-print(requests.get('http://zap:8090').status_code)
-PY
-```
-
-### HTTPS certificate warnings
-
-A browser warning is expected with the temporary self-signed certificate. Replace cert files in `./certs` with your own cert/key pair.
-
----
-
-## Current scope / known limits
-
-Implemented today:
-
-- project/target/profile/job models
-- celery-driven baseline/full-active scan orchestration
-- raw alert persistence
-- findings normalization
-- weighted risk snapshots and risk views
-
-Still intentionally limited:
-
-- API scan execution is still a placeholder
-- lifecycle workflows such as remediation state transitions/suppressions are not complete
-- advanced evolution/diff analytics and reporting are still iterative
-
-## Reporting and PDF export
-
-ZapUI now generates per-scan reports in three formats:
-
-- HTML (summary + risk + severity breakdown + detailed findings/instances)
-- JSON export
-- PDF (generated by internal `pdf` service using `wkhtmltopdf`)
-
-### Access in UI
-
-- Scan detail page: download HTML/JSON/PDF for completed scans.
-- Reports list page: `/reports`.
-
-### Storage
-
-All report files are written to the media volume:
-
-- `/app/mediafiles/reports/html/`
-- `/app/mediafiles/reports/json/`
-- `/app/mediafiles/reports/pdf/`
-
-### PDF troubleshooting
-
-- Verify PDF service health/logs:
-  - `docker compose logs pdf`
-- Ensure `PDF_SERVICE_URL` is reachable from `web` and `worker` containers (default `http://pdf:8092`).
-- Inspect invalid HTML or unsupported wkhtmltopdf options when render fails.
-
-## Operations and security handbook
-
-The backend operations handbook is maintained at:
-
-- `backend/zapcontrol/README.md`
-
-It includes deep health tests, ZAP pool controls, rebuild/redeploy workflows, admin re-auth and audit logging expectations, secure deployment practices (VPN/IP allowlist), and disaster recovery/backup guidance.
+## Docs and onboarding map
+- `README.md` (this file): complete deploy/operator overview
+- `docs/architecture.md`: service architecture and concept model
+- `docs/security.md`: hardening and privileged boundaries
+- `docs/operations.md`: day-2 runbooks, backup/restore, upgrades
+- `docs/api.md`: endpoint reference
+- `scripts/README.md`: installer usage details
+- `backend/zapcontrol/README.md`: backend internals
+- `nginx/README.md`: ingress and setup-flag behavior

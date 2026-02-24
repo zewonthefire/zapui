@@ -1,33 +1,27 @@
-# Scripts Directory
+# Scripts
 
-This folder contains helper scripts for bootstrapping and operating ZapUI.
+## install.sh
+Interactive, idempotent installer/upgrader for ZapUI.
 
-## Files
+### Features
+- safe re-run behavior
+- clone or reuse existing checkout
+- optional `git pull --ff-only`
+- port updates (`PUBLIC_HTTP_PORT`, `PUBLIC_HTTPS_PORT`) with compose re-apply
+- ops profile toggle (`ENABLE_OPS_AGENT`, `COMPOSE_PROFILES`)
+- optional image build/rebuild (`docker compose build --pull`)
+- clear status output and final access URLs
 
-- `install.sh`: Interactive installer that clones or updates the repo, writes key `.env` values, builds images, and starts the compose stack.
-
-## `install.sh` workflow
-
-1. Prompts for install directory, repository URL, HTTP/HTTPS ports, and whether to enable the Ops Agent.
-2. Clones the repository if missing, or runs a fast-forward pull if it already exists.
-3. Creates required runtime folders (`certs`, `nginx/state`, `nginx/conf.d`).
-4. Creates `.env` from `.env.example` when missing.
-5. Upserts runtime values:
-   - `PUBLIC_HTTP_PORT`
-   - `PUBLIC_HTTPS_PORT`
-   - `ENABLE_OPS_AGENT`
-   - `COMPOSE_PROFILES`
-6. Runs:
-   - `docker compose build`
-   - `docker compose up -d`
-
-## Usage
-
+### Usage
 ```bash
 bash scripts/install.sh
 ```
 
-## Notes
+### Typical scenarios
+- Fresh install on new host
+- Reconfigure public ports
+- Enable/disable ops profile
+- Pull latest source and rebuild services
 
-- Enabling Ops Agent sets `COMPOSE_PROFILES=ops`.
-- Installer does not generate long-lived trusted certs; temporary/self-signed cert behavior is handled by nginx container startup.
+### Notes
+The script updates `.env` keys in-place and then runs `docker compose up -d --remove-orphans` so changes are applied consistently.
