@@ -256,6 +256,32 @@ class SetupWizardZapKeyTests(TestCase):
         self.assertEqual(mock_ops_post.call_args_list[0].args[0], '/compose/env/upsert-zap-api-key')
         self.assertEqual(mock_ops_post.call_args_list[1].args[0], '/compose/scale')
 
+    @patch('core.views.OPS_ENABLED', True)
+    @patch('core.views._ops_post')
+    def test_step_four_existing_key_failure_message_is_non_blocking(self, mock_ops_post):
+        from core.models import Setting
+
+        class FakeResp:
+            status_code = 500
+
+        import requests
+
+        mock_ops_post.side_effect = requests.HTTPError(response=FakeResp())
+        Setting.objects.update_or_create(key='internal_zap_api_key', defaults={'value': 'already-there'})
+
+        response = self.client.post(
+            '/setup',
+            {
+                'step': '4',
+                'action': 'next',
+                'zap_pool_size': '1',
+            },
+            follow=True,
+        )
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Unable to re-apply internal ZAP API key automatically (HTTP 500). Existing key is kept; setup can continue if internal ZAP is reachable.')
+
 
 class SetupWizardFinalizeRestartTests(TestCase):
     def setUp(self):

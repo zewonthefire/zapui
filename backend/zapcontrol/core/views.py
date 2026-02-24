@@ -186,7 +186,10 @@ def _ensure_internal_zap_api_key() -> tuple[str, bool, str]:
                 return api_key, True, 'Internal ZAP API key generated and applied to compose.'
             return api_key, True, 'Existing internal ZAP API key reapplied to compose.'
         except Exception as exc:
-            return api_key, False, _friendly_ops_error(exc, 'Unable to apply internal ZAP API key automatically')
+            base_hint = _friendly_ops_error(exc, 'Unable to re-apply internal ZAP API key automatically')
+            if not created:
+                return api_key, False, f'{base_hint} Existing key is kept; setup can continue if internal ZAP is reachable.'
+            return api_key, False, base_hint
 
     return api_key, False, (
         'Ops Agent disabled. Run: '
