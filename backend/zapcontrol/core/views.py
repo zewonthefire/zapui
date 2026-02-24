@@ -568,7 +568,14 @@ def ops_overview(request):
     else:
         status_rows = [{'service': s, 'state': 'disabled', 'status': 'Enable ENABLE_OPS_AGENT=true + COMPOSE_PROFILES=ops'} for s in OPS_SERVICES]
 
-    running_zap_containers = _discover_internal_zap_containers() if OPS_ENABLED else []
+    if OPS_ENABLED:
+        try:
+            running_zap_containers = _discover_internal_zap_containers()
+        except Exception as exc:
+            running_zap_containers = []
+            messages.warning(request, f'Unable to list internal ZAP containers: {exc}')
+    else:
+        running_zap_containers = []
     pool_setting = Setting.objects.filter(key='zap_internal_pool').first()
     desired_pool_size = (pool_setting.value or {}).get('desired_size', 1) if pool_setting else 1
 
