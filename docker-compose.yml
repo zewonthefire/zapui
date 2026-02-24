@@ -88,6 +88,8 @@ services:
 
   zap:
     image: zaproxy/zap-stable
+    env_file:
+      - .env
     environment:
       ZAP_API_KEY: ${ZAP_API_KEY:-change-me-zap-key}
     command:
