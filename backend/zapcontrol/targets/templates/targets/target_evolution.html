@@ -1,0 +1,74 @@
+{% extends "core/base.html" %}
+{% block title %}Target Evolution{% endblock %}
+{% block content %}
+<h1 class="h3">Evolution: {{ target.name }}</h1>
+<p>Project: <a href="/projects/{{ target.project.id }}">{{ target.project.name }}</a></p>
+
+<div class="card mt-3">
+  <div class="card-body">
+    <h2 class="h5">Risk over time</h2>
+    <canvas id="riskTimelineChart" height="110"></canvas>
+  </div>
+</div>
+
+<div class="card mt-3">
+  <div class="card-body">
+    <h2 class="h5">Scan deltas</h2>
+    <table class="table table-sm">
+      <thead>
+        <tr>
+          <th>Compared At</th>
+          <th>From Scan</th>
+          <th>To Scan</th>
+          <th>Risk Delta</th>
+          <th>New</th>
+          <th>Resolved</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for comparison in comparisons %}
+        <tr>
+          <td>{{ comparison.created_at }}</td>
+          <td>#{{ comparison.from_scan_job_id }}</td>
+          <td>#{{ comparison.to_scan_job_id }}</td>
+          <td>{{ comparison.risk_delta }}</td>
+          <td>{{ comparison.new_finding_ids|length }}</td>
+          <td>{{ comparison.resolved_finding_ids|length }}</td>
+          <td><a href="/targets/{{ target.id }}/evolution/{{ comparison.id }}">Details</a></td>
+        </tr>
+        {% empty %}
+        <tr><td colspan="7" class="text-muted">No comparison data yet. Run at least two successful scans.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script>
+  const timelineData = {{ timeline_points_json|safe }};
+  const labels = timelineData.map(p => p.label + ' (#' + p.scan_id + ')');
+  const scores = timelineData.map(p => p.score);
+  const ctx = document.getElementById('riskTimelineChart');
+  new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels,
+      datasets: [{
+        label: 'Risk Score',
+        data: scores,
+        borderColor: 'rgb(54, 162, 235)',
+        backgroundColor: 'rgba(54, 162, 235, 0.2)',
+        tension: 0.2,
+      }]
+    },
+    options: {
+      responsive: true,
+      scales: {
+        y: { beginAtZero: true }
+      }
+    }
+  });
+</script>
+{% endblock %}

@@ -16,6 +16,7 @@ ZapControl is the application API/UI backend for:
 - raw alert persistence
 - normalized findings lifecycle
 - weighted risk snapshots for target/project/global scopes
+- asset evolution diffs between consecutive successful scans
 
 Primary app modules:
 
@@ -97,7 +98,8 @@ High-level flow:
 5. Persist `RawZapResult`
 6. Normalize alerts into `Finding` + `FindingInstance`
 7. Compute and persist `RiskSnapshot` for target/project/global
-8. Mark job completed (or failed/retried on errors)
+8. Compute and persist `ScanComparison` against the previous successful scan for the target
+9. Mark job completed (or failed/retried on errors)
 
 Notes:
 
@@ -159,7 +161,38 @@ Generated per completed scan:
 
 ---
 
-## 7) Risk-facing pages
+
+
+## 7) Evolution tracking and diff computation
+
+Evolution tracking captures what changed between the newest completed scan and the prior completed scan for the same target.
+
+Model: `ScanComparison`
+
+- `target` -> target being compared
+- `from_scan_job` -> older successful scan
+- `to_scan_job` -> newer successful scan
+- `new_finding_ids` -> finding IDs present in `to` but not in `from`
+- `resolved_finding_ids` -> finding IDs present in `from` but not in `to`
+- `risk_delta` -> `to_target_risk_score - from_target_risk_score`
+- `created_at` -> comparison creation timestamp
+
+Computation details:
+
+1. On scan completion, normalization and risk snapshots run first.
+2. The task selects the immediately previous successful scan for the same target.
+3. Finding sets are built from `FindingInstance` rows per scan (distinct `finding_id`).
+4. Deltas are computed as set differences:
+   - `new = current - previous`
+   - `resolved = previous - current`
+5. Risk delta is derived from target-level `RiskSnapshot` values for those two scans.
+6. A single `ScanComparison` row is created/updated for that scan pair.
+
+This provides a stable historical chain of scan-to-scan changes.
+
+---
+
+## 8) Risk and evolution pages
 
 - `/dashboard`
   - current global risk score
@@ -171,10 +204,15 @@ Generated per completed scan:
 - `/targets/<id>`
   - current target risk score
   - open findings list with severity, instance count, last seen
+  - link to evolution views
+- `/targets/<id>/evolution`
+  - risk-over-time chart for that target
+  - scan comparison table including risk delta and finding counts
+- `/targets/<id>/evolution/<comparison_id>`
+  - diff details showing new vs resolved findings
 
 ---
-
-## 8) Admin surfaces
+## 9) Admin surfaces
 
 Django admin registers:
 
@@ -189,7 +227,7 @@ Use admin to:
 
 ---
 
-## 9) Local development
+## 10) Local development
 
 From this directory:
 
@@ -216,11 +254,12 @@ If your local environment is outside docker-compose, ensure DB/Redis hostnames i
 
 ---
 
-## 10) Migrations added for risk normalization
+## 11) Migrations added for risk normalization and evolution tracking
 
 The schema for normalized findings/risk snapshots is introduced by:
 
 - `targets/migrations/0004_finding_risksnapshot_findinginstance.py`
+- `targets/migrations/0005_scancomparison.py`
 
 Apply with:
 
@@ -230,19 +269,16 @@ python manage.py migrate
 
 ---
 
-## 11) Known limits (current scope)
+## 12) Known limits (current scope)
 
-- No evolution diffing yet (intentionally out of scope)
 - API scan flow is placeholder
 - Risk score is weighted counts (triage signal), not exploitability scoring
 
 ---
 
-## 12) Suggested next steps
+## 13) Suggested next steps
 
 - add stateful finding status (open/accepted/fixed/false-positive)
 - add suppression rules
-- add true trend chart visualization
-- add evolution/diffing between snapshots
 - add tests for normalization idempotency and snapshot math
 

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Finding, FindingInstance, Project, RawZapResult, RiskSnapshot, ScanJob, ScanProfile, Target, ZapNode
+from .models import Finding, FindingInstance, Project, RawZapResult, RiskSnapshot, ScanComparison, ScanJob, ScanProfile, Target, ZapNode
 
 
 @admin.register(ZapNode)
@@ -61,3 +61,10 @@ class RiskSnapshotAdmin(admin.ModelAdmin):
     list_display = ('id', 'project', 'target', 'scan_job', 'risk_score', 'created_at')
     list_filter = ('project', 'target')
     search_fields = ('scan_job__id', 'project__name', 'target__name')
+
+
+@admin.register(ScanComparison)
+class ScanComparisonAdmin(admin.ModelAdmin):
+    list_display = ('id', 'target', 'from_scan_job', 'to_scan_job', 'risk_delta', 'created_at')
+    list_filter = ('target',)
+    search_fields = ('target__name', 'from_scan_job__id', 'to_scan_job__id')

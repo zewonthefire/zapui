@@ -1,10 +1,12 @@
+import json
 from django import forms
 from django.contrib import messages
 from django.contrib.auth.decorators import login_required
 from django.db.models import OuterRef, Subquery
+from django.http import Http404
 from django.shortcuts import get_object_or_404, redirect, render
 
-from .models import Finding, RiskSnapshot, ScanJob, ScanProfile, Target, Project
+from .models import Finding, FindingInstance, RiskSnapshot, ScanComparison, ScanJob, ScanProfile, Target, Project
 from .tasks import start_scan_job
 
 
@@ -102,6 +104,63 @@ def project_detail(request, project_id: int):
         request,
         'targets/project_detail.html',
         {'project': project, 'latest_project_risk': latest_project_risk, 'top_targets': top_targets},
+    )
+
+
+@login_required
+def target_evolution(request, target_id: int):
+    target = get_object_or_404(Target.objects.select_related('project'), pk=target_id)
+    comparisons = ScanComparison.objects.filter(target=target).select_related('from_scan_job', 'to_scan_job').order_by('-created_at')
+    target_snapshots = target.risk_snapshots.filter(project__isnull=True).select_related('scan_job').order_by('created_at')
+
+    timeline_points = [
+        {
+            'label': snapshot.created_at.strftime('%Y-%m-%d %H:%M'),
+            'score': float(snapshot.risk_score),
+            'scan_id': snapshot.scan_job_id,
+        }
+        for snapshot in target_snapshots
+    ]
+
+    return render(
+        request,
+        'targets/target_evolution.html',
+        {
+            'target': target,
+            'comparisons': comparisons,
+            'timeline_points_json': json.dumps(timeline_points),
+        },
+    )
+
+
+@login_required
+def target_diff_detail(request, target_id: int, comparison_id: int):
+    target = get_object_or_404(Target.objects.select_related('project'), pk=target_id)
+    comparison = get_object_or_404(
+        ScanComparison.objects.select_related('from_scan_job', 'to_scan_job').filter(target=target),
+        pk=comparison_id,
+    )
+
+    from_ids = set(FindingInstance.objects.filter(scan_job=comparison.from_scan_job).values_list('finding_id', flat=True).distinct())
+    to_ids = set(FindingInstance.objects.filter(scan_job=comparison.to_scan_job).values_list('finding_id', flat=True).distinct())
+
+    new_findings = Finding.objects.filter(id__in=comparison.new_finding_ids).order_by('-severity', 'title')
+    resolved_findings = Finding.objects.filter(id__in=comparison.resolved_finding_ids).order_by('-severity', 'title')
+
+    stale_new_ids = sorted(set(comparison.new_finding_ids) - to_ids)
+    stale_resolved_ids = sorted(set(comparison.resolved_finding_ids) - from_ids)
+    if stale_new_ids or stale_resolved_ids:
+        raise Http404('Comparison details are out of sync with scan data.')
+
+    return render(
+        request,
+        'targets/target_diff_detail.html',
+        {
+            'target': target,
+            'comparison': comparison,
+            'new_findings': new_findings,
+            'resolved_findings': resolved_findings,
+        },
     )
 
 
