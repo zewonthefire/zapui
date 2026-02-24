@@ -7,6 +7,11 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY', 'unsafe-dev-key')
 DEBUG = os.getenv('DJANGO_DEBUG', '0') == '1'
 ALLOWED_HOSTS = [h.strip() for h in os.getenv('DJANGO_ALLOWED_HOSTS', '*').split(',') if h.strip()]
 
+
+_csrf_trusted_origins = [o.strip() for o in os.getenv('DJANGO_CSRF_TRUSTED_ORIGINS', '').split(',') if o.strip()]
+if _csrf_trusted_origins:
+    CSRF_TRUSTED_ORIGINS = _csrf_trusted_origins
+
 INSTALLED_APPS = [
     'django.contrib.admin',
     'django.contrib.auth',
@@ -95,7 +100,7 @@ SESSION_SAVE_EVERY_REQUEST = os.getenv('SESSION_SAVE_EVERY_REQUEST', '1') == '1'
 SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 _secure_cookies = os.getenv('DJANGO_SECURE_COOKIES')
 if _secure_cookies is None:
-    # Default to non-secure cookies unless explicitly forced, to avoid CSRF breakage during HTTP setup/proxy edge cases.
+    # Default to non-secure cookies unless explicitly forced. Origin checks still require DJANGO_CSRF_TRUSTED_ORIGINS for HTTPS hostnames.
     SESSION_COOKIE_SECURE = False
     CSRF_COOKIE_SECURE = False
 else:

@@ -194,6 +194,8 @@ See `docs/security.md` for full guidance.
 
 - **Unexpected redirects to setup**
   - verify `SetupState.is_complete` and `nginx/state/setup_complete` consistency.
+- **CSRF 403 on setup/login over HTTPS**
+  - set `DJANGO_CSRF_TRUSTED_ORIGINS` with your public origin(s), e.g. `https://merlin:8093`, then recreate `web` service.
 - **Login issues**
   - verify setup completion and admin creation step.
 - **Node connectivity failures**
