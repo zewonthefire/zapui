@@ -280,6 +280,20 @@ Risk score formula per scope:
 - A score decrease means findings were reduced or shifted to lower severities.
 - Because this score is weighted counts (not exploitability), use it as a triage/monitoring signal rather than a standalone security verdict.
 
+## Repository documentation map
+
+To keep docs close to implementation, additional folder-level READMEs are now available:
+
+- `backend/README.md`
+- `backend/zapcontrol/README.md`
+- `docker/README.md`
+- `docker/web/README.md`
+- `docker/nginx/README.md`
+- `docker/ops/README.md`
+- `docker/pdf/README.md`
+- `nginx/README.md`
+- `scripts/README.md`
+
 ## Installation
 
 ### Option A: Quick install (interactive)
@@ -385,13 +399,18 @@ A browser warning is expected with the temporary self-signed certificate. Replac
 
 ---
 
-## Current scope / non-goals
+## Current scope / known limits
 
-This skeleton does **not** implement:
+Implemented today:
 
-- project/target/scan domain models
-- scan orchestration
-- finding normalization and risk scoring
-- reporting pipeline
+- project/target/profile/job models
+- celery-driven baseline/full-active scan orchestration
+- raw alert persistence
+- findings normalization
+- weighted risk snapshots and risk views
 
-Those are intentionally deferred for later iterations.
+Still intentionally limited:
+
+- API scan execution is still a placeholder
+- lifecycle workflows such as remediation state transitions/suppressions are not complete
+- advanced evolution/diff analytics and reporting are still iterative
