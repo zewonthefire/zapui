@@ -1,19 +1,14 @@
 {% extends "core/base.html" %}
+
 {% block content %}
-<div style="display:flex; gap:20px;">
-  <aside style="min-width:220px; border-right:1px solid #ddd; padding-right:12px;">
-    <h3>Administration</h3>
-    <ul>
-      <li><a href="{% url 'administration:users' %}">Users</a></li>
-      <li><a href="{% url 'administration:groups' %}">Groups</a></li>
-      <li><a href="{% url 'administration:nodes' %}">Zap nodes</a></li>
-      <li><a href="{% url 'administration:pools' %}">Internal ZAP pool</a></li>
-      <li><a href="{% url 'administration:settings' %}">Database</a></li>
-      <li><a href="{% url 'administration:audit' %}">Audit</a></li>
-    </ul>
-  </aside>
-  <main style="flex:1;">
+<div class="mb-3">
+  <h1 class="h4 mb-1">Administration</h1>
+  <p class="text-muted mb-0">Gestion des utilisateurs, groupes, nœuds ZAP, pools internes, paramètres et audit.</p>
+</div>
+
+<div class="card shadow-sm">
+  <div class="card-body">
     {% block admin_content %}{% endblock %}
-  </main>
+  </div>
 </div>
 {% endblock %}
