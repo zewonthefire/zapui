@@ -1,0 +1,9 @@
+{% extends 'dashboard/page_base.html' %}
+{% block dashboard_content %}
+<div class="row g-3 mb-3">
+  <div class="col-md-4"><div class="card card-body"><small>New</small><strong>{{ data.counts.new }}</strong></div></div>
+  <div class="col-md-4"><div class="card card-body"><small>Resolved</small><strong>{{ data.counts.resolved }}</strong></div></div>
+  <div class="col-md-4"><div class="card card-body"><small>Regressed</small><strong>{{ data.counts.regressed }}</strong></div></div>
+</div>
+<div class="card"><div class="card-header">Diff feed</div><div class="card-body"><ul>{% for row in data.diff_feed %}<li>{{ row.severity }} - {{ row.title }} ({{ row.target__name }})</li>{% empty %}<li>No comparison data.</li>{% endfor %}</ul></div></div>
+{% endblock %}

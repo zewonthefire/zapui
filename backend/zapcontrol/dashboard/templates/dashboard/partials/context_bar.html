@@ -1,0 +1,66 @@
+<form method="get" class="card card-body mb-3">
+  <div class="row g-2 align-items-end">
+    <div class="col-md-2">
+      <label class="form-label">Project</label>
+      <select class="form-select" name="project_id" onchange="this.form.submit()">
+        <option value="all">All</option>
+        {% for project in context_options.projects %}
+          <option value="{{ project.id }}" {% if filters.project_id == project.id %}selected{% endif %}>{{ project.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Target</label>
+      <select class="form-select" name="target_id" onchange="this.form.submit()">
+        <option value="all">All</option>
+        {% for target in context_options.targets %}
+          <option value="{{ target.id }}" {% if filters.target_id == target.id %}selected{% endif %}>{{ target.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Asset</label>
+      <select class="form-select" name="asset_id" onchange="this.form.submit()">
+        <option value="all">All</option>
+        {% for asset in context_options.assets %}
+          <option value="{{ asset.id }}" {% if filters.asset_id == asset.id %}selected{% endif %}>{{ asset.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Scanner / Node</label>
+      <select class="form-select" name="node_id" onchange="this.form.submit()">
+        <option value="all">All</option>
+        {% for node in context_options.nodes %}
+          <option value="{{ node.id }}" {% if filters.node_id == node.id %}selected{% endif %}>{{ node.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-2">
+      <label class="form-label">Scan Profile</label>
+      <select class="form-select" name="profile_id" onchange="this.form.submit()">
+        <option value="all">All</option>
+        {% for profile in context_options.profiles %}
+          <option value="{{ profile.id }}" {% if filters.profile_id == profile.id %}selected{% endif %}>{{ profile.name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-1">
+      <label class="form-label">Range</label>
+      <select class="form-select" name="range" onchange="this.form.submit()">
+        <option value="7d" {% if filters.range_key == '7d' %}selected{% endif %}>7d</option>
+        <option value="30d" {% if filters.range_key == '30d' %}selected{% endif %}>30d</option>
+        <option value="90d" {% if filters.range_key == '90d' %}selected{% endif %}>90d</option>
+      </select>
+    </div>
+    <div class="col-md-1">
+      <label class="form-label">Scan Run</label>
+      <select class="form-select" name="scan_id" onchange="this.form.submit()">
+        <option value="latest" {% if filters.scan_id == 'latest' %}selected{% endif %}>Latest</option>
+        {% for scan in context_options.scan_runs %}
+          <option value="{{ scan.id }}" {% if filters.scan_id == scan.id|stringformat:'s' %}selected{% endif %}>{{ scan.label }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+</form>
