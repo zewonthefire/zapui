@@ -1,0 +1,29 @@
+{% extends "administration/base.html" %}
+{% block admin_content %}
+<h2>Users</h2>
+<form method="get">
+  <input name="search" placeholder="Search email" value="{{ request.GET.search }}">
+  <button>Filter</button>
+</form>
+<table>
+  <tr><th>Email</th><th>Active</th><th>Last login</th><th>Groups</th><th>Joined</th></tr>
+  {% for u in page_obj %}
+  <tr>
+    <td><a href="{% url 'administration:user-detail' u.id %}">{{ u.email }}</a></td>
+    <td>{{ u.is_active }}</td><td>{{ u.last_login }}</td>
+    <td>{% for g in u.groups.all %}{{ g.name }} {% endfor %}</td>
+    <td>{{ u.date_joined }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<h3>Create user</h3>
+<form method="post">{% csrf_token %}
+  <input name="email" type="email" required placeholder="Email">
+  <input name="password" type="password" placeholder="Password (optional)">
+  <select name="groups" multiple>
+    {% for g in groups %}<option value="{{ g.id }}">{{ g.name }}</option>{% endfor %}
+  </select>
+  <button>Create</button>
+</form>
+{% include "administration/_pagination.html" with page_obj=page_obj %}
+{% endblock %}

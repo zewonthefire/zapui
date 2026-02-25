@@ -24,11 +24,13 @@ INSTALLED_APPS = [
     'core',
     'targets',
     'dashboard',
+    'administration',
 ]
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
     'core.middleware.SetupWizardMiddleware',
+    'administration.middleware.RequestAuditMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -115,9 +117,13 @@ REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',
     ],
+    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
+    'PAGE_SIZE': 20,
 }
 
 CELERY_BROKER_URL = os.getenv('CELERY_BROKER_URL', 'redis://redis:6379/0')
 CELERY_RESULT_BACKEND = os.getenv('CELERY_RESULT_BACKEND', 'redis://redis:6379/1')
 
 PDF_SERVICE_URL = os.getenv('PDF_SERVICE_URL', 'http://pdf:8092')
+
+ZAP_NODE_KEY_ENCRYPTION_SECRET = os.getenv('ZAP_NODE_KEY_ENCRYPTION_SECRET', '')
