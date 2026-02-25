@@ -52,6 +52,7 @@ It is disabled by default and should be treated as high-trust infrastructure.
 - actions are allowed only when `ENABLE_OPS_AGENT=true`,
 - token required via `OPS_AGENT_TOKEN`,
 - service names validated against compose service inventory,
+- `POST /compose/env/upsert-zap-api-key` patches `PROJECT_DIR/docker-compose.yml` (expected default layout),
 - intended for internal compose network usage only.
 
 ---

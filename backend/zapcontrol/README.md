@@ -81,6 +81,9 @@ The backend is split into three Django apps:
 - Internal PDF service for HTML-to-PDF report rendering.
 - Optional Ops Agent for compose-driven operational actions.
 
+Setup note for internal ZAP API key application:
+- during step 4, if Ops key reapply returns HTTP 500 while an existing `internal_zap_api_key` is already stored, the wizard now reports a non-blocking warning and keeps the existing key.
+
 ---
 
 ## 4) Setup wizard and request gating

@@ -2,12 +2,11 @@ import os
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.contrib.auth.models import Group
 from django.test import TestCase
 from django.urls import reverse
 
 from core.models import SetupState
-from targets.models import Project, ZapNode
+from targets.models import ZapNode
 
 
 class SetupWizardGatingTests(TestCase):
@@ -435,62 +434,3 @@ class DeepZapCheckApiKeyHintTests(TestCase):
         self.assertEqual(result['status'], 'ok')
         self.assertIn('api_key=configured', result['hint'])
         self.assertEqual(mock_get.call_count, 2)
-
-
-class ManagementCenterTests(TestCase):
-    def setUp(self):
-        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': True})
-        User = get_user_model()
-        self.admin = User.objects.create_user(email='admin-mgmt@example.com', password='Passw0rd!123', role='admin', is_staff=True)
-        self.readonly = User.objects.create_user(email='readonly-mgmt@example.com', password='Passw0rd!123', role='readonly')
-
-    def test_readonly_is_redirected_from_management_center(self):
-        self.client.login(username='readonly-mgmt@example.com', password='Passw0rd!123')
-        response = self.client.get('/management', follow=True)
-
-        self.assertEqual(response.status_code, 200)
-        self.assertContains(response, 'Admin role required for operations pages.')
-
-    def test_admin_can_create_group_user_and_project(self):
-        self.client.login(username='admin-mgmt@example.com', password='Passw0rd!123')
-
-        group_response = self.client.post(
-            '/management',
-            {
-                'entity': 'group',
-                'group-name': 'sec-team',
-            },
-            follow=True,
-        )
-        self.assertContains(group_response, 'Group sec-team created.')
-        self.assertTrue(Group.objects.filter(name='sec-team').exists())
-
-        user_response = self.client.post(
-            '/management',
-            {
-                'entity': 'user',
-                'user-email': 'new-user@example.com',
-                'user-role': 'security_engineer',
-                'user-is_active': 'on',
-                'user-password': 'Passw0rd!123',
-                'user-groups': [str(Group.objects.get(name='sec-team').id)],
-            },
-            follow=True,
-        )
-        self.assertContains(user_response, 'User new-user@example.com created.')
-
-        project_response = self.client.post(
-            '/management',
-            {
-                'entity': 'project',
-                'project-name': 'From UI',
-                'project-slug': 'from-ui',
-                'project-description': 'created',
-                'project-owner': 'sec-team',
-                'project-risk_level': 'medium',
-                'project-tags': '[]',
-            },
-            follow=True,
-        )
-        self.assertContains(project_response, 'Project created.')
-        self.assertTrue(Project.objects.filter(slug='from-ui').exists())

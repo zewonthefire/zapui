@@ -146,6 +146,7 @@ Wizard steps:
 2. initial admin account,
 3. TLS mode (generate or validate provided certs),
 4. internal ZAP pool size and optional external node test,
+   - if Ops API-key reapply fails with HTTP 500 but an internal ZAP key already exists, setup shows a non-blocking warning and keeps the existing key.
 5. finalize and mark setup complete.
 
 Wizard progress is persisted server-side and can resume across restarts/transitions.
