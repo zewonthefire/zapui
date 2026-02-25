@@ -449,3 +449,47 @@ docker compose logs -f --tail=200 web worker beat nginx
 - Validation checklist: `docs/DOCS_QA_CHECKLIST.md`
 
 No original content removed in this file.
+
+---
+
+## Assets module quickstart (inventory, raw results, comparisons)
+
+### Install & run
+
+```bash
+cd backend/zapcontrol
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+DJANGO_DB_ENGINE=sqlite python manage.py migrate
+DJANGO_DB_ENGINE=sqlite python manage.py runserver
+```
+
+### Ingest a ZAP JSON report
+
+```bash
+DJANGO_DB_ENGINE=sqlite python manage.py ingest_zap_json \
+  --project demo \
+  --target Main \
+  --profile default \
+  --node node-1 \
+  --file /path/to/result.json
+```
+
+### Assets pages
+
+- `/assets/` → Assets Inventory
+- `/assets/<id>/` → Asset Detail tabs (Overview / Findings / Risk / Scans / Raw / Comparisons)
+- `/assets/raw/` → Global raw ZAP JSON viewer
+- Inventory auto-bootstrap: if legacy data exists without `Asset` rows, opening `/assets/` backfills minimal asset rows from existing targets/findings.
+- Raw results viewer renders both a human-readable alerts table and pretty-printed JSON; it falls back to `raw_alerts` when legacy rows have empty `payload`.
+- `/assets/comparisons/` → Global scan comparisons
+
+### Context APIs
+
+- `/api/context/projects`
+- `/api/context/targets?project_id=`
+- `/api/context/assets?target_id=`
+- `/api/context/nodes`
+- `/api/context/profiles?project_id=`
+- `/api/context/scans?target_id=&range=`

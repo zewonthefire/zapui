@@ -1,0 +1,61 @@
+{% extends 'core/base.html' %}
+{% block title %}Raw ZAP Results{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Raw ZAP Results</h1>
+{% include 'targets/assets/partials/context_bar.html' %}
+<div class="row g-3">
+  <div class="col-md-4">
+    <div class="list-group">
+      {% for result in results %}
+      <a class="list-group-item list-group-item-action {% if selected and selected.id == result.id %}active{% endif %}" href="?scan_job_id={{ result.scan_job_id }}&result_id={{ result.id }}">
+        <div class="fw-semibold">Scan #{{ result.scan_job_id }}</div>
+        <small>{{ result.fetched_at }} • {{ result.size_bytes }} bytes</small>
+      </a>
+      {% empty %}
+      <div class="list-group-item text-muted">No raw results found.</div>
+      {% endfor %}
+    </div>
+  </div>
+  <div class="col-md-8">
+    {% if selected %}
+      <div class="d-flex justify-content-between align-items-center mb-2">
+        <strong>Checksum: {{ selected.checksum|default:'n/a' }}</strong>
+        <a class="btn btn-sm btn-outline-primary" href="/api/raw-results?scan_job_id={{ selected.scan_job_id }}">Download raw</a>
+      </div>
+
+      <div class="card mb-3">
+        <div class="card-header">Alerts summary (human-readable)</div>
+        <div class="card-body p-0">
+          <div class="table-responsive">
+            <table class="table table-sm mb-0">
+              <thead><tr><th>Risk</th><th>Confidence</th><th>Alert</th><th>URL</th><th>Param</th></tr></thead>
+              <tbody>
+                {% for alert in selected_alerts %}
+                <tr>
+                  <td>{{ alert.risk|default:'Info' }}</td>
+                  <td>{{ alert.confidence|default:'Medium' }}</td>
+                  <td>{{ alert.alert|default:'-' }}</td>
+                  <td class="text-break">{{ alert.url|default:'-' }}</td>
+                  <td>{{ alert.param|default:'-' }}</td>
+                </tr>
+                {% empty %}
+                <tr><td colspan="5" class="text-muted text-center py-3">No alerts in this raw payload.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Pretty JSON</div>
+        <div class="card-body">
+          <pre class="bg-dark text-light p-3 rounded mb-0" style="max-height:60vh;overflow:auto">{{ selected_pretty_payload }}</pre>
+        </div>
+      </div>
+    {% else %}
+      <p class="text-muted">No result selected.</p>
+    {% endif %}
+  </div>
+</div>
+{% endblock %}

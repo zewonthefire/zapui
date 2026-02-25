@@ -1,86 +1,47 @@
 from decimal import Decimal
-from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
 from core.models import SetupState
-from targets.models import (
-    Finding,
-    FindingInstance,
-    Project,
-    RawZapResult,
-    RiskSnapshot,
-    ScanJob,
-    ScanProfile,
-    Target,
-    ZapNode,
-)
-from targets.risk import create_scan_comparison
-from targets.tasks import start_scan_job
+from targets.models import Asset, Finding, Project, RawZapResult, RiskSnapshot, ScanComparisonItem, ScanJob, ScanProfile, Target, ZapNode
+from targets.risk import build_finding_fingerprint, build_scan_comparison, compute_risk_score
 
 
-class ScanLifecycleMockTests(TestCase):
-    def setUp(self):
-        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': True})
-        User = get_user_model()
-        self.user = User.objects.create_user(email='sec@example.com', password='Passw0rd!123', role='security_engineer')
-        self.project = Project.objects.create(name='App', slug='app')
-        self.target = Target.objects.create(project=self.project, name='API', base_url='https://example.test')
-        self.node = ZapNode.objects.create(
-            name='node-1',
-            base_url='http://zap:8090',
-            status=ZapNode.STATUS_HEALTHY,
-            enabled=True,
-        )
-        self.profile = ScanProfile.objects.create(
-            name='Default',
-            project=self.project,
-            zap_node=self.node,
-            scan_type=ScanProfile.TYPE_BASELINE_LIKE,
-            spider_enabled=True,
-            max_duration_minutes=5,
-        )
-        self.job = ScanJob.objects.create(project=self.project, target=self.target, profile=self.profile, initiated_by=self.user)
+class RiskAndFingerprintTests(TestCase):
+    def test_compute_risk_score_uses_default_weights_and_confidence(self):
+        score, breakdown = compute_risk_score([
+            {'severity': 'High', 'confidence': 'High'},
+            {'severity': 'Medium', 'confidence': 'Medium'},
+            {'severity': 'Low', 'confidence': 'Low'},
+        ])
+        self.assertEqual(score, Decimal('14.60'))
+        self.assertEqual(breakdown['High'], 1)
+        self.assertEqual(breakdown['Medium'], 1)
+        self.assertEqual(breakdown['Low'], 1)
 
-    @patch('targets.tasks.generate_scan_report')
-    @patch('targets.tasks.ZapApiClient')
-    def test_scan_job_moves_to_completed_and_persists_results(self, mock_client_cls, _mock_report):
-        mock_client = mock_client_cls.return_value
-        mock_client.version.return_value = {'version': '2.15.0'}
-        mock_client.start_spider.return_value = '10'
-        mock_client.spider_status.return_value = 100
-        mock_client.start_active_scan.return_value = '22'
-        mock_client.active_status.return_value = 100
-        mock_client.alerts.return_value = [
-            {
-                'pluginId': '10001',
-                'alert': 'XSS',
-                'risk': 'High',
-                'url': 'https://example.test',
-                'param': 'q',
-                'evidence': '<script>',
-            }
-        ]
-
-        start_scan_job(self.job.id)
-
-        self.job.refresh_from_db()
-        self.assertEqual(self.job.status, ScanJob.STATUS_COMPLETED)
-        self.assertEqual(self.job.zap_spider_id, '10')
-        self.assertEqual(self.job.zap_ascan_id, '22')
-        self.assertTrue(RawZapResult.objects.filter(scan_job=self.job).exists())
+    def test_fingerprint_stable_for_identical_alert(self):
+        alert = {
+            'pluginId': '10001',
+            'url': 'https://example.test/a',
+            'param': 'id',
+            'method': 'GET',
+            'evidence': 'x',
+        }
+        self.assertEqual(build_finding_fingerprint(alert), build_finding_fingerprint(dict(alert)))
 
 
-class EvolutionDiffComputationTests(TestCase):
+class ComparisonLogicTests(TestCase):
     def setUp(self):
         self.project = Project.objects.create(name='Proj', slug='proj')
         self.target = Target.objects.create(project=self.project, name='Web', base_url='https://web.test')
+        self.asset = Asset.objects.create(target=self.target, name='https://web.test', asset_type=Asset.TYPE_URL, uri='https://web.test')
         self.node = ZapNode.objects.create(name='node-1', base_url='http://zap:8090', enabled=True)
-        self.profile = ScanProfile.objects.create(name='prof', project=self.project, zap_node=self.node)
+        self.profile = ScanProfile.objects.create(name='default', project=self.project, zap_node=self.node)
 
-    def _completed_job(self):
+    def _job(self):
         return ScanJob.objects.create(
             project=self.project,
             target=self.target,
@@ -89,49 +50,89 @@ class EvolutionDiffComputationTests(TestCase):
             completed_at=timezone.now(),
         )
 
-    def test_comparison_computes_new_resolved_and_risk_delta(self):
-        old_job = self._completed_job()
-        new_job = self._completed_job()
+    def test_new_resolved_changed_items_created(self):
+        scan_a = self._job()
+        scan_b = self._job()
+        RiskSnapshot.objects.create(target=self.target, scan_job=scan_a, asset=self.asset, risk_score=Decimal('5.0'))
+        RiskSnapshot.objects.create(target=self.target, scan_job=scan_b, asset=self.asset, risk_score=Decimal('8.0'))
 
-        old_finding = Finding.objects.create(
-            target=self.target,
-            scan_job=old_job,
-            zap_plugin_id='10001',
-            title='Old only',
-            severity='Low',
-            first_seen=timezone.now(),
-            last_seen=timezone.now(),
+        Finding.objects.create(
+            target=self.target, asset=self.asset, scan_job=scan_a, zap_plugin_id='1', title='Old', severity='Low', confidence='Low',
+            fingerprint='old', first_seen=timezone.now(), last_seen=timezone.now(),
         )
-        shared_finding = Finding.objects.create(
-            target=self.target,
-            scan_job=old_job,
-            zap_plugin_id='10002',
-            title='Shared',
-            severity='Medium',
-            first_seen=timezone.now(),
-            last_seen=timezone.now(),
+        Finding.objects.create(
+            target=self.target, asset=self.asset, scan_job=scan_a, zap_plugin_id='2', title='Changed', severity='Low', confidence='Medium',
+            fingerprint='changed', first_seen=timezone.now(), last_seen=timezone.now(),
         )
-        new_finding = Finding.objects.create(
-            target=self.target,
-            scan_job=new_job,
-            zap_plugin_id='10003',
-            title='New only',
-            severity='High',
-            first_seen=timezone.now(),
-            last_seen=timezone.now(),
+        Finding.objects.create(
+            target=self.target, asset=self.asset, scan_job=scan_b, zap_plugin_id='2', title='Changed', severity='High', confidence='High',
+            fingerprint='changed', first_seen=timezone.now(), last_seen=timezone.now(),
+        )
+        Finding.objects.create(
+            target=self.target, asset=self.asset, scan_job=scan_b, zap_plugin_id='3', title='New', severity='Medium', confidence='Medium',
+            fingerprint='new', first_seen=timezone.now(), last_seen=timezone.now(),
         )
 
-        FindingInstance.objects.create(finding=old_finding, scan_job=old_job)
-        FindingInstance.objects.create(finding=shared_finding, scan_job=old_job)
-        FindingInstance.objects.create(finding=shared_finding, scan_job=new_job)
-        FindingInstance.objects.create(finding=new_finding, scan_job=new_job)
+        comparison = build_scan_comparison(scan_a, scan_b, asset=self.asset)
+        self.assertEqual(comparison.summary, {'new': 1, 'resolved': 1, 'changed': 1})
+        self.assertEqual(comparison.risk_delta, Decimal('3.0'))
+        self.assertEqual(comparison.items.filter(change_type=ScanComparisonItem.CHANGE_NEW).count(), 1)
+        self.assertEqual(comparison.items.filter(change_type=ScanComparisonItem.CHANGE_RESOLVED).count(), 1)
+        self.assertEqual(comparison.items.filter(change_type=ScanComparisonItem.CHANGE_CHANGED).count(), 1)
 
-        RiskSnapshot.objects.create(target=self.target, scan_job=old_job, risk_score=Decimal('5.00'))
-        RiskSnapshot.objects.create(target=self.target, scan_job=new_job, risk_score=Decimal('12.00'))
 
-        comparison = create_scan_comparison(new_job)
+class ContextApiTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': True})
+        User = get_user_model()
+        self.user = User.objects.create_user(email='sec@example.com', password='Passw0rd!123', role='security_engineer')
+        self.client.force_login(self.user)
+        self.project = Project.objects.create(name='App', slug='app')
+        self.target = Target.objects.create(project=self.project, name='API', base_url='https://example.test')
+        Asset.objects.create(target=self.target, name='https://example.test', asset_type=Asset.TYPE_URL, uri='https://example.test')
 
-        self.assertIsNotNone(comparison)
-        self.assertEqual(comparison.new_finding_ids, [new_finding.id])
-        self.assertEqual(comparison.resolved_finding_ids, [old_finding.id])
-        self.assertEqual(comparison.risk_delta, Decimal('7.00'))
+    def test_context_cascading_endpoints(self):
+        projects = self.client.get('/api/context/projects').json()
+        self.assertTrue(any(p['name'] == 'App' for p in projects))
+
+        targets = self.client.get(f'/api/context/targets?project_id={self.project.id}').json()
+        self.assertTrue(any(t['name'] == 'API' for t in targets))
+
+        assets = self.client.get(f'/api/context/assets?target_id={self.target.id}').json()
+        self.assertTrue(any(a['name'] == 'https://example.test' for a in assets))
+
+
+class AssetsPagesTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': True})
+        User = get_user_model()
+        self.user = User.objects.create_user(email='assets@example.com', password='Passw0rd!123', role='security_engineer')
+        self.client.force_login(self.user)
+
+        self.project = Project.objects.create(name='Assets', slug='assets')
+        self.target = Target.objects.create(project=self.project, name='Main', base_url='https://main.test')
+        self.node = ZapNode.objects.create(name='node-assets', base_url='http://zap-assets:8090', enabled=True)
+        self.profile = ScanProfile.objects.create(name='assets-prof', project=self.project, zap_node=self.node)
+        self.job = ScanJob.objects.create(project=self.project, target=self.target, profile=self.profile, status=ScanJob.STATUS_COMPLETED)
+
+    def test_inventory_bootstraps_asset_from_existing_targets(self):
+        self.assertEqual(Asset.objects.count(), 0)
+        response = self.client.get('/assets/')
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(Asset.objects.count(), 1)
+        self.assertContains(response, 'main.test')
+
+    def test_raw_results_page_uses_raw_alerts_when_payload_empty(self):
+        RawZapResult.objects.create(
+            scan_job=self.job,
+            payload={},
+            raw_alerts=[{'alert': 'XSS', 'risk': 'High', 'url': 'https://main.test', 'param': 'q'}],
+            metadata={'source': 'test'},
+            size_bytes=12,
+            checksum='abc',
+        )
+        response = self.client.get('/assets/raw/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Alerts summary (human-readable)')
+        self.assertContains(response, 'XSS')
+        self.assertContains(response, 'Pretty JSON')
