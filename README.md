@@ -90,7 +90,7 @@ Runtime flow summary:
 5. Findings/risk/evolution models are updated.
 6. Reports are generated.
 
-For full details, see `docs/architecture.md`.
+For full details, see `docs/architecture.md` and `docs/dashboard.md` for dashboard routes and context filters.
 
 ---
 

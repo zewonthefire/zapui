@@ -40,10 +40,14 @@ The backend is split into three Django apps:
   - role metadata.
 - `core`
   - setup wizard state and persistence,
-  - dashboard and version endpoints,
+  - legacy landing dashboard (`/dashboard`) and version endpoint,
   - operations overview/actions/log views,
   - settings and audit log models,
   - setup-gating middleware.
+- `dashboard`
+  - multi-page dashboard UI (`Overview`, `Risk`, `Findings`, `Coverage`, `Changes`, `Operations`),
+  - reusable global Context Bar with cascading filters,
+  - JSON APIs for dashboard widgets and context options.
 - `targets`
   - project/target inventory,
   - scan profile and scan job lifecycle,
@@ -312,6 +316,20 @@ Reports are generated after successful scan completion.
   - `/ops/actions`
   - `/ops/logs/<service>`
   - `/zapnodes`
+- Dashboard pages and APIs:
+  - `/dashboard/overview/`
+  - `/dashboard/risk/`
+  - `/dashboard/findings/`
+  - `/dashboard/coverage/`
+  - `/dashboard/changes/`
+  - `/dashboard/operations/`
+  - `/api/context/options/`
+  - `/api/dashboard/overview/`
+  - `/api/dashboard/risk/`
+  - `/api/dashboard/findings/`
+  - `/api/dashboard/coverage/`
+  - `/api/dashboard/changes/`
+  - `/api/dashboard/operations/`
 - Scanning and analysis:
   - `/profiles`
   - `/scans`
@@ -320,6 +338,8 @@ Reports are generated after successful scan completion.
   - `/targets/<id>`
   - `/targets/<id>/evolution`
   - `/targets/<id>/evolution/<comparison_id>`
+
+For dashboard filter semantics and querystring examples, see `docs/dashboard.md`.
 
 ---
 
