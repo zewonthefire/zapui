@@ -1,0 +1,24 @@
+{% extends "administration/base.html" %}
+{% block admin_content %}
+<h2>Database / App settings</h2>
+<p><a href="{% url 'administration:db-sanity' %}">Run DB sanity check (SELECT 1)</a></p>
+<form method="post" action="{% url 'administration:purge-retention' %}">{% csrf_token %}<button>Run retention purge</button></form>
+<table>
+  <tr><th>Key</th><th>Value</th><th>Type</th><th>Updated</th><th>Action</th></tr>
+  {% for s in settings %}
+  <tr>
+    <td>{{ s.key }}</td>
+    <td>{% if s.is_secret %}********{% else %}{{ s.value }}{% endif %}</td>
+    <td>{{ s.value_type }}</td>
+    <td>{{ s.updated_at }}</td>
+    <td>
+      <form method="post">{% csrf_token %}
+        <input type="hidden" name="setting_id" value="{{ s.id }}">
+        <input name="value" value="{% if s.is_secret %}{% else %}{{ s.value }}{% endif %}">
+        <button>Save</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+{% endblock %}

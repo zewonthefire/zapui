@@ -1,0 +1,24 @@
+{% extends "administration/base.html" %}
+{% block admin_content %}
+<h2>Groups</h2>
+<ul>
+  {% for g in groups %}
+    <li>
+      <strong>{{ g.name }}</strong> ({{ g.members_count }} members)
+      <form method="post" action="{% url 'administration:group-permissions' g.id %}">{% csrf_token %}
+        <details>
+          <summary>Edit permissions</summary>
+          {% for p in permissions %}
+            <label><input type="checkbox" name="permission_ids" value="{{ p.id }}" {% if p in g.permissions.all %}checked{% endif %}>{{ p.content_type.app_label }}.{{ p.codename }}</label><br>
+          {% endfor %}
+          <button>Save permissions</button>
+        </details>
+      </form>
+    </li>
+  {% endfor %}
+</ul>
+<form method="post">{% csrf_token %}
+  <input name="name" placeholder="New group name" required>
+  <button>Create group</button>
+</form>
+{% endblock %}
