@@ -1,23 +1,18 @@
-from django.contrib.auth.models import Group
 from rest_framework.permissions import BasePermission
 
-from .services import ROLE_AUDIT_VIEWER, ROLE_SCAN_ADMIN, ROLE_SYSTEM_ADMIN
-
-
-def in_group(user, name: str) -> bool:
-    return user.is_authenticated and user.groups.filter(name=name).exists()
+from .services import ROLE_AUDITOR, ROLE_SCANNER, ROLE_ADMIN, user_in_role
 
 
 def is_system_admin(user) -> bool:
-    return bool(user.is_authenticated and (user.is_superuser or in_group(user, ROLE_SYSTEM_ADMIN)))
+    return bool(user.is_authenticated and (user.is_superuser or user_in_role(user, ROLE_ADMIN)))
 
 
 def is_scan_admin(user) -> bool:
-    return bool(user.is_authenticated and (is_system_admin(user) or in_group(user, ROLE_SCAN_ADMIN)))
+    return bool(user.is_authenticated and (is_system_admin(user) or user_in_role(user, ROLE_SCANNER)))
 
 
 def is_audit_reader(user) -> bool:
-    return bool(user.is_authenticated and (is_scan_admin(user) or in_group(user, ROLE_AUDIT_VIEWER)))
+    return bool(user.is_authenticated and (is_scan_admin(user) or user_in_role(user, ROLE_AUDITOR)))
 
 
 class IsSystemAdmin(BasePermission):

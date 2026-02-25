@@ -527,14 +527,17 @@ DJANGO_DB_ENGINE=sqlite python manage.py runserver
 
 ```bash
 DJANGO_DB_ENGINE=sqlite python manage.py bootstrap_admin_roles
-DJANGO_DB_ENGINE=sqlite python manage.py shell -c "from django.contrib.auth import get_user_model; from django.contrib.auth.models import Group; u=get_user_model().objects.get(email='admin@example.com'); u.groups.add(Group.objects.get(name='system_admin'))"
+DJANGO_DB_ENGINE=sqlite python manage.py shell -c "from django.contrib.auth import get_user_model; from django.contrib.auth.models import Group; u=get_user_model().objects.get(email='admin@example.com'); u.groups.add(Group.objects.get(name='admin'))"
 ```
 
 Baseline groups:
 
-- `system_admin` (full Administration access)
-- `scan_admin` (nodes/pools + audit)
-- `audit_viewer` (read-only audit)
+- `admin` (full Administration access)
+- `scanner` (scan configuration + ZAP nodes/pools + audit read)
+- `auditor` (read-only audit access)
+- `assets_management` (assets/findings/raw-results/report access groups)
+
+> A user can belong to **multiple groups** at once (e.g., `scanner` + `assets_management`).
 
 ### Add a ZapNode and run healthcheck
 

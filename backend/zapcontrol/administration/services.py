@@ -1,8 +1,6 @@
 import base64
 import hashlib
-import json
 import uuid
-from typing import Any
 
 from django.conf import settings
 from django.contrib.auth import get_user_model
@@ -12,9 +10,23 @@ from django.db import connection
 
 from .models import AppSetting, AuditEvent
 
-ROLE_SYSTEM_ADMIN = 'system_admin'
-ROLE_SCAN_ADMIN = 'scan_admin'
-ROLE_AUDIT_VIEWER = 'audit_viewer'
+# Default pre-provisioned groups requested by product
+ROLE_ADMIN = 'admin'
+ROLE_SCANNER = 'scanner'
+ROLE_AUDITOR = 'auditor'
+ROLE_ASSETS_MANAGEMENT = 'assets_management'
+
+# Backward-compatible aliases kept for existing installations/tests
+ROLE_SYSTEM_ADMIN = ROLE_ADMIN
+ROLE_SCAN_ADMIN = ROLE_SCANNER
+ROLE_AUDIT_VIEWER = ROLE_AUDITOR
+
+RBAC_ALIASES = {
+    ROLE_ADMIN: {'admin', 'system_admin'},
+    ROLE_SCANNER: {'scanner', 'scan_admin'},
+    ROLE_AUDITOR: {'auditor', 'audit_viewer'},
+    ROLE_ASSETS_MANAGEMENT: {'assets_management'},
+}
 
 
 def audit_log(actor, action: str, obj=None, status: str = AuditEvent.STATUS_SUCCESS, message: str = '', extra: dict | None = None, request=None):
@@ -38,6 +50,13 @@ def audit_log(actor, action: str, obj=None, status: str = AuditEvent.STATUS_SUCC
         message=message[:255],
         extra=extra or {},
     )
+
+
+def user_in_role(user, role_name: str) -> bool:
+    if not user.is_authenticated:
+        return False
+    allowed_names = RBAC_ALIASES.get(role_name, {role_name})
+    return user.groups.filter(name__in=allowed_names).exists()
 
 
 def setting_int(key: str, default: int) -> int:
@@ -65,25 +84,45 @@ def ensure_default_settings():
         )
 
 
+def _perms_for_models(*model_classes):
+    content_types = [ContentType.objects.get_for_model(model_class) for model_class in model_classes]
+    return list(Permission.objects.filter(content_type__in=content_types))
+
+
+def _perms_by_codename(*codenames):
+    return list(Permission.objects.filter(codename__in=codenames))
+
+
 def bootstrap_roles():
     User = get_user_model()
-    user_ct = ContentType.objects.get_for_model(User)
-    group_ct = ContentType.objects.get_for_model(Group)
-    app_setting_ct = ContentType.objects.get_for_model(AppSetting)
-    audit_ct = ContentType.objects.get_for_model(AuditEvent)
+    from administration.models import AppSetting, AuditEvent, ZapPool
+    from targets.models import Asset, Finding, Project, RawZapResult, Report, RiskSnapshot, ScanJob, ScanProfile, ScanRun, Target, ZapNode
 
-    perms = {
-        ROLE_SYSTEM_ADMIN: list(Permission.objects.filter(content_type__in=[user_ct, group_ct, app_setting_ct, audit_ct])) + list(
-            Permission.objects.filter(codename__in=['add_zappool', 'change_zappool', 'delete_zappool', 'view_zappool'])
-        ),
-        ROLE_SCAN_ADMIN: list(
-            Permission.objects.filter(codename__in=['view_auditevent', 'add_zappool', 'change_zappool', 'view_zappool'])
-        ),
-        ROLE_AUDIT_VIEWER: list(Permission.objects.filter(codename='view_auditevent')),
+    admin_perms = (
+        _perms_for_models(User, Group, AppSetting, AuditEvent, ZapPool, ZapNode, Project, Target, ScanProfile, ScanJob, ScanRun)
+        + _perms_by_codename('add_permission', 'change_permission', 'delete_permission', 'view_permission')
+    )
+
+    scanner_perms = _perms_for_models(ZapNode, ZapPool, Project, Target, ScanProfile, ScanJob, ScanRun) + _perms_by_codename('view_auditevent')
+
+    auditor_perms = _perms_for_models(AuditEvent)
+
+    assets_perms = _perms_for_models(Asset, Finding, RawZapResult, RiskSnapshot, Report)
+
+    group_permissions = {
+        ROLE_ADMIN: admin_perms,
+        ROLE_SCANNER: scanner_perms,
+        ROLE_AUDITOR: auditor_perms,
+        ROLE_ASSETS_MANAGEMENT: assets_perms,
+        # Legacy names kept in sync
+        'system_admin': admin_perms,
+        'scan_admin': scanner_perms,
+        'audit_viewer': auditor_perms,
     }
-    for role_name, role_perms in perms.items():
-        group, _ = Group.objects.get_or_create(name=role_name)
-        group.permissions.set(role_perms)
+
+    for group_name, perms in group_permissions.items():
+        group, _ = Group.objects.get_or_create(name=group_name)
+        group.permissions.set(perms)
 
 
 def db_connection_sanity() -> bool:

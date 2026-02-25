@@ -11,6 +11,7 @@ class AdministrationConfig(AppConfig):
 
 
 def _seed_settings(sender, **kwargs):
-    from .services import ensure_default_settings
+    from .services import bootstrap_roles, ensure_default_settings
 
     ensure_default_settings()
+    bootstrap_roles()
