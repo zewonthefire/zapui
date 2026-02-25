@@ -116,8 +116,15 @@ def groups_list(request):
         group, _ = Group.objects.get_or_create(name=request.POST['name'].strip())
         audit_log(request.user, AuditEvent.ACTION_CREATE, group, request=request)
         return redirect('administration:groups')
-    groups = Group.objects.annotate(members_count=Count('user')).order_by('name')
-    return render(request, 'administration/groups_list.html', {'groups': groups, 'permissions': Permission.objects.order_by('content_type__app_label', 'codename')})
+    groups = Group.objects.annotate(members_count=Count('user')).prefetch_related('permissions').order_by('name')
+    return render(
+        request,
+        'administration/groups_list.html',
+        {
+            'groups': groups,
+            'permission_sections': _group_permissions_for_ui(),
+        },
+    )
 
 
 @login_required
@@ -131,6 +138,59 @@ def group_permissions(request, group_id):
     audit_log(request.user, AuditEvent.ACTION_UPDATE, group, request=request, message='Updated group permissions')
     return redirect('administration:groups')
 
+
+
+
+def _group_permissions_for_ui():
+    sections = [
+        (
+            'Administration & Security',
+            ['administration', 'accounts', 'auth', 'contenttypes'],
+            {'add', 'change', 'delete', 'view'},
+        ),
+        (
+            'Scanning Configuration & Execution',
+            ['targets'],
+            {'add', 'change', 'delete', 'view'},
+        ),
+        (
+            'Assets & Findings',
+            ['targets'],
+            {'view', 'change'},
+        ),
+        (
+            'System / Sessions',
+            ['sessions', 'admin'],
+            {'view', 'change'},
+        ),
+    ]
+
+    all_permissions = Permission.objects.select_related('content_type').order_by('content_type__app_label', 'codename')
+
+    def _split_codename(code):
+        if '_' in code:
+            action, remainder = code.split('_', 1)
+            return action, remainder
+        return code, code
+
+    grouped = []
+    used_ids = set()
+    for title, app_labels, actions in sections:
+        perms = []
+        for perm in all_permissions:
+            action, remainder = _split_codename(perm.codename)
+            if perm.content_type.app_label in app_labels and action in actions:
+                if title == 'Assets & Findings' and remainder not in {'asset', 'finding', 'rawzapresult', 'report', 'risksnapshot', 'findinginstance'}:
+                    continue
+                perms.append(perm)
+                used_ids.add(perm.id)
+        if perms:
+            grouped.append({'title': title, 'permissions': perms})
+
+    other_permissions = [perm for perm in all_permissions if perm.id not in used_ids]
+    if other_permissions:
+        grouped.append({'title': 'Other permissions', 'permissions': other_permissions})
+    return grouped
 
 def _node_queryset(request):
     qs = ZapNode.objects.all()

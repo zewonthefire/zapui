@@ -532,6 +532,7 @@ DJANGO_DB_ENGINE=sqlite python manage.py shell -c "from django.contrib.auth impo
 
 Baseline groups:
 
+- `superadmin` (all permissions across the platform)
 - `admin` (full Administration access)
 - `scanner` (scan configuration + ZAP nodes/pools + audit read)
 - `auditor` (read-only audit access)

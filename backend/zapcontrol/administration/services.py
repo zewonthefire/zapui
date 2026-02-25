@@ -11,6 +11,7 @@ from django.db import connection
 from .models import AppSetting, AuditEvent
 
 # Default pre-provisioned groups requested by product
+ROLE_SUPERADMIN = 'superadmin'
 ROLE_ADMIN = 'admin'
 ROLE_SCANNER = 'scanner'
 ROLE_AUDITOR = 'auditor'
@@ -22,7 +23,8 @@ ROLE_SCAN_ADMIN = ROLE_SCANNER
 ROLE_AUDIT_VIEWER = ROLE_AUDITOR
 
 RBAC_ALIASES = {
-    ROLE_ADMIN: {'admin', 'system_admin'},
+    ROLE_SUPERADMIN: {'superadmin'},
+    ROLE_ADMIN: {'admin', 'system_admin', 'superadmin'},
     ROLE_SCANNER: {'scanner', 'scan_admin'},
     ROLE_AUDITOR: {'auditor', 'audit_viewer'},
     ROLE_ASSETS_MANAGEMENT: {'assets_management'},
@@ -109,7 +111,10 @@ def bootstrap_roles():
 
     assets_perms = _perms_for_models(Asset, Finding, RawZapResult, RiskSnapshot, Report)
 
+    all_perms = list(Permission.objects.all())
+
     group_permissions = {
+        ROLE_SUPERADMIN: all_perms,
         ROLE_ADMIN: admin_perms,
         ROLE_SCANNER: scanner_perms,
         ROLE_AUDITOR: auditor_perms,

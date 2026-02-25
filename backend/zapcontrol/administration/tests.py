@@ -14,6 +14,7 @@ from administration.services import (
     ROLE_ASSETS_MANAGEMENT,
     ROLE_AUDITOR,
     ROLE_SCANNER,
+    ROLE_SUPERADMIN,
     bootstrap_roles,
     encrypt_api_key,
 )
@@ -57,11 +58,17 @@ class AdministrationRBACTests(TestCase):
 class AdministrationGroupsBootstrapTests(TestCase):
     def test_bootstrap_creates_default_groups_and_permissions(self):
         bootstrap_roles()
-        for group_name in [ROLE_ADMIN, ROLE_AUDITOR, ROLE_SCANNER, ROLE_ASSETS_MANAGEMENT]:
+        for group_name in [ROLE_SUPERADMIN, ROLE_ADMIN, ROLE_AUDITOR, ROLE_SCANNER, ROLE_ASSETS_MANAGEMENT]:
             self.assertTrue(Group.objects.filter(name=group_name).exists())
 
         assets_group = Group.objects.get(name=ROLE_ASSETS_MANAGEMENT)
         self.assertTrue(assets_group.permissions.filter(codename='view_asset').exists())
+
+
+    def test_superadmin_group_gets_permissions(self):
+        bootstrap_roles()
+        superadmin_group = Group.objects.get(name=ROLE_SUPERADMIN)
+        self.assertGreater(superadmin_group.permissions.count(), 0)
 
     def test_user_can_belong_to_multiple_groups(self):
         bootstrap_roles()
