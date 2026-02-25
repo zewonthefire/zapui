@@ -8,12 +8,15 @@ from urllib.parse import urlparse
 import psycopg
 import redis
 import requests
+from django import forms
 from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import get_user_model
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.models import Group
 from django.contrib.auth.password_validation import validate_password
 from django.core.exceptions import ValidationError
+from django.forms import modelform_factory
 from django.http import HttpRequest, JsonResponse
 from django.shortcuts import redirect, render
 from django.utils import timezone
@@ -21,7 +24,7 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
 
-from targets.models import Project, RiskSnapshot, Target, ZapNode
+from targets.models import Finding, Project, RiskSnapshot, ScanComparison, Target, ZapNode
 
 from .models import OpsAuditLog, Setting, SetupState
 
@@ -32,6 +35,20 @@ OPS_SERVICES = ['nginx', 'web', 'worker', 'beat', 'db', 'redis', 'zap', 'pdf', '
 SETUP_FLAG_PATH = Path('/nginx-state/setup_complete')
 CERT_DIR = Path('/certs')
 EXTERNAL_DB_CONFIG_PATH = Path('/nginx-state/external_db_config.env')
+
+
+class UserManagementForm(forms.ModelForm):
+    password = forms.CharField(widget=forms.PasswordInput(), required=True)
+
+    class Meta:
+        model = get_user_model()
+        fields = ['email', 'role', 'is_active', 'is_staff', 'groups', 'password']
+
+
+class GroupManagementForm(forms.ModelForm):
+    class Meta:
+        model = Group
+        fields = ['name']
 
 
 def _setup_state() -> SetupState:
@@ -692,6 +709,135 @@ def dashboard(request):
         'core/dashboard.html',
         {'latest_global': latest_global, 'trends': trends, 'projects': projects, 'targets': targets},
     )
+
+
+@login_required
+def management_center(request):
+    denied = _admin_only(request)
+    if denied:
+        return denied
+
+    User = get_user_model()
+    user_form = UserManagementForm(prefix='user')
+    group_form = GroupManagementForm(prefix='group')
+
+    setting_model_form = modelform_factory(Setting, fields=['key', 'value'])
+    project_form_cls = modelform_factory(Project, fields=['name', 'slug', 'description', 'owner', 'risk_level', 'tags'])
+    target_form_cls = modelform_factory(Target, fields=['project', 'name', 'base_url', 'environment', 'auth_type', 'auth_config', 'notes'])
+    finding_form_cls = modelform_factory(Finding, fields=['target', 'scan_job', 'zap_plugin_id', 'title', 'severity', 'description', 'solution', 'reference', 'cwe_id', 'wasc_id', 'first_seen', 'last_seen', 'instances_count'])
+    risk_snapshot_form_cls = modelform_factory(RiskSnapshot, fields=['project', 'target', 'scan_job', 'risk_score', 'counts_by_severity'])
+    scan_comparison_form_cls = modelform_factory(ScanComparison, fields=['target', 'from_scan_job', 'to_scan_job', 'new_finding_ids', 'resolved_finding_ids', 'risk_delta'])
+
+    setting_form = setting_model_form(prefix='setting')
+    project_form = project_form_cls(prefix='project')
+    target_form = target_form_cls(prefix='target')
+    finding_form = finding_form_cls(prefix='finding')
+    risk_snapshot_form = risk_snapshot_form_cls(prefix='risk_snapshot')
+    scan_comparison_form = scan_comparison_form_cls(prefix='scan_comparison')
+
+    if request.method == 'POST':
+        entity = request.POST.get('entity', '').strip()
+        action = request.POST.get('action', 'create').strip()
+
+        if entity == 'user':
+            if action == 'delete':
+                user_id = request.POST.get('id')
+                if str(request.user.id) == str(user_id):
+                    messages.error(request, 'You cannot delete your own account.')
+                else:
+                    user_obj = User.objects.filter(pk=user_id).first()
+                    if user_obj:
+                        user_obj.delete()
+                        messages.success(request, 'User deleted.')
+            else:
+                user_form = UserManagementForm(request.POST, prefix='user')
+                if user_form.is_valid():
+                    cleaned = user_form.cleaned_data
+                    password = cleaned.pop('password')
+                    groups = cleaned.pop('groups', [])
+                    user_obj = User(**cleaned)
+                    user_obj.set_password(password)
+                    user_obj.save()
+                    user_obj.groups.set(groups)
+                    messages.success(request, f'User {user_obj.email} created.')
+                else:
+                    messages.error(request, 'Unable to create user. Please check the form values.')
+
+        elif entity == 'group':
+            if action == 'delete':
+                group_id = request.POST.get('id')
+                group = Group.objects.filter(pk=group_id).first()
+                if group:
+                    group.delete()
+                    messages.success(request, 'Group deleted.')
+            else:
+                group_form = GroupManagementForm(request.POST, prefix='group')
+                if group_form.is_valid():
+                    group = group_form.save()
+                    messages.success(request, f'Group {group.name} created.')
+                else:
+                    messages.error(request, 'Unable to create group.')
+
+        else:
+            entity_registry = {
+                'setting': (Setting, setting_model_form, 'setting', 'Setting'),
+                'project': (Project, project_form_cls, 'project', 'Project'),
+                'target': (Target, target_form_cls, 'target', 'Target'),
+                'finding': (Finding, finding_form_cls, 'finding', 'Finding'),
+                'risk_snapshot': (RiskSnapshot, risk_snapshot_form_cls, 'risk_snapshot', 'Risk snapshot'),
+                'scan_comparison': (ScanComparison, scan_comparison_form_cls, 'scan_comparison', 'Scan comparison'),
+            }
+            entry = entity_registry.get(entity)
+            if entry:
+                model_cls, form_cls, prefix, label = entry
+                if action == 'delete':
+                    obj_id = request.POST.get('id')
+                    deleted, _ = model_cls.objects.filter(pk=obj_id).delete()
+                    if deleted:
+                        messages.success(request, f'{label} deleted.')
+                    else:
+                        messages.error(request, f'{label} not found.')
+                else:
+                    bound_form = form_cls(request.POST, prefix=prefix)
+                    if bound_form.is_valid():
+                        bound_form.save()
+                        messages.success(request, f'{label} created.')
+                    else:
+                        messages.error(request, f'Unable to create {label.lower()}.')
+                        if entity == 'setting':
+                            setting_form = bound_form
+                        elif entity == 'project':
+                            project_form = bound_form
+                        elif entity == 'target':
+                            target_form = bound_form
+                        elif entity == 'finding':
+                            finding_form = bound_form
+                        elif entity == 'risk_snapshot':
+                            risk_snapshot_form = bound_form
+                        elif entity == 'scan_comparison':
+                            scan_comparison_form = bound_form
+
+        return redirect('management-center')
+
+    context = {
+        'user_form': user_form,
+        'group_form': group_form,
+        'setting_form': setting_form,
+        'project_form': project_form,
+        'target_form': target_form,
+        'finding_form': finding_form,
+        'risk_snapshot_form': risk_snapshot_form,
+        'scan_comparison_form': scan_comparison_form,
+        'users': User.objects.order_by('email'),
+        'groups': Group.objects.order_by('name'),
+        'settings_rows': Setting.objects.order_by('key')[:50],
+        'projects': Project.objects.order_by('name')[:50],
+        'targets': Target.objects.select_related('project').order_by('project__name', 'name')[:50],
+        'findings': Finding.objects.select_related('target').order_by('-last_seen')[:50],
+        'risk_snapshots': RiskSnapshot.objects.select_related('scan_job').order_by('-created_at')[:50],
+        'scan_comparisons': ScanComparison.objects.select_related('target', 'from_scan_job', 'to_scan_job').order_by('-created_at')[:50],
+    }
+    return render(request, 'core/management_center.html', context)
 
 
 @login_required

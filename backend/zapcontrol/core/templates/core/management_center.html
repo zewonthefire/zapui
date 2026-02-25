@@ -1,0 +1,115 @@
+{% extends "core/base.html" %}
+
+{% block title %}Management Center | ZapControl{% endblock %}
+
+{% block content %}
+<div class="p-4 bg-white border rounded shadow-sm mb-4">
+  <h1 class="h3 mb-2">Management Center</h1>
+  <p class="text-muted mb-0">Gestion graphique pour users, groups, settings, findings, projects, risk snapshot scan comparisons et targets.</p>
+</div>
+
+<div class="row g-3">
+  <div class="col-12 col-xl-6">
+    <div class="card">
+      <div class="card-header">Users</div>
+      <div class="card-body">
+        <form method="post" class="row g-2 mb-3">
+          {% csrf_token %}
+          <input type="hidden" name="entity" value="user">
+          {{ user_form.as_p }}
+          <button class="btn btn-primary">Create user</button>
+        </form>
+        <div class="table-responsive">
+          <table class="table table-sm align-middle mb-0">
+            <thead><tr><th>Email</th><th>Role</th><th>Groups</th><th></th></tr></thead>
+            <tbody>
+            {% for row in users %}
+              <tr>
+                <td>{{ row.email }}</td>
+                <td>{{ row.get_role_display }}</td>
+                <td>{% for g in row.groups.all %}{{ g.name }}{% if not forloop.last %}, {% endif %}{% empty %}<span class="text-muted">-</span>{% endfor %}</td>
+                <td>
+                  <form method="post">
+                    {% csrf_token %}
+                    <input type="hidden" name="entity" value="user">
+                    <input type="hidden" name="action" value="delete">
+                    <input type="hidden" name="id" value="{{ row.id }}">
+                    <button class="btn btn-outline-danger btn-sm">Delete</button>
+                  </form>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="col-12 col-xl-6">
+    <div class="card">
+      <div class="card-header">Groups</div>
+      <div class="card-body">
+        <form method="post" class="mb-3">
+          {% csrf_token %}
+          <input type="hidden" name="entity" value="group">
+          {{ group_form.as_p }}
+          <button class="btn btn-primary">Create group</button>
+        </form>
+        <ul class="list-group">
+          {% for row in groups %}
+            <li class="list-group-item d-flex justify-content-between align-items-center">
+              {{ row.name }}
+              <form method="post" class="mb-0">
+                {% csrf_token %}
+                <input type="hidden" name="entity" value="group">
+                <input type="hidden" name="action" value="delete">
+                <input type="hidden" name="id" value="{{ row.id }}">
+                <button class="btn btn-outline-danger btn-sm">Delete</button>
+              </form>
+            </li>
+          {% empty %}
+            <li class="list-group-item text-muted">No groups.</li>
+          {% endfor %}
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-12 col-xl-6"><div class="card"><div class="card-header">Settings</div><div class="card-body">
+    <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="entity" value="setting">{{ setting_form.as_p }}<button class="btn btn-primary">Create setting</button></form>
+    <ul class="list-group">{% for row in settings_rows %}<li class="list-group-item d-flex justify-content-between"><span><strong>{{ row.key }}</strong> <small class="text-muted">{{ row.updated_at }}</small></span><form method="post">{% csrf_token %}<input type="hidden" name="entity" value="setting"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}"><button class="btn btn-outline-danger btn-sm">Delete</button></form></li>{% empty %}<li class="list-group-item text-muted">No settings.</li>{% endfor %}</ul>
+  </div></div></div>
+
+  <div class="col-12 col-xl-6"><div class="card"><div class="card-header">Projects</div><div class="card-body">
+    <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="entity" value="project">{{ project_form.as_p }}<button class="btn btn-primary">Create project</button></form>
+    <ul class="list-group">{% for row in projects %}<li class="list-group-item d-flex justify-content-between"><span>{{ row.name }} <small class="text-muted">({{ row.slug }})</small></span><form method="post">{% csrf_token %}<input type="hidden" name="entity" value="project"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}"><button class="btn btn-outline-danger btn-sm">Delete</button></form></li>{% empty %}<li class="list-group-item text-muted">No projects.</li>{% endfor %}</ul>
+  </div></div></div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-12 col-xl-6"><div class="card"><div class="card-header">Targets</div><div class="card-body">
+    <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="entity" value="target">{{ target_form.as_p }}<button class="btn btn-primary">Create target</button></form>
+    <ul class="list-group">{% for row in targets %}<li class="list-group-item d-flex justify-content-between"><span>{{ row.project.name }} / {{ row.name }}</span><form method="post">{% csrf_token %}<input type="hidden" name="entity" value="target"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}"><button class="btn btn-outline-danger btn-sm">Delete</button></form></li>{% empty %}<li class="list-group-item text-muted">No targets.</li>{% endfor %}</ul>
+  </div></div></div>
+
+  <div class="col-12 col-xl-6"><div class="card"><div class="card-header">Findings</div><div class="card-body">
+    <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="entity" value="finding">{{ finding_form.as_p }}<button class="btn btn-primary">Create finding</button></form>
+    <ul class="list-group">{% for row in findings %}<li class="list-group-item d-flex justify-content-between"><span>{{ row.target.name }} / {{ row.title }}</span><form method="post">{% csrf_token %}<input type="hidden" name="entity" value="finding"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}"><button class="btn btn-outline-danger btn-sm">Delete</button></form></li>{% empty %}<li class="list-group-item text-muted">No findings.</li>{% endfor %}</ul>
+  </div></div></div>
+</div>
+
+<div class="row g-3 mt-1">
+  <div class="col-12 col-xl-6"><div class="card"><div class="card-header">Risk snapshots</div><div class="card-body">
+    <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="entity" value="risk_snapshot">{{ risk_snapshot_form.as_p }}<button class="btn btn-primary">Create risk snapshot</button></form>
+    <ul class="list-group">{% for row in risk_snapshots %}<li class="list-group-item d-flex justify-content-between"><span>Scan #{{ row.scan_job_id }} — {{ row.risk_score }}</span><form method="post">{% csrf_token %}<input type="hidden" name="entity" value="risk_snapshot"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}"><button class="btn btn-outline-danger btn-sm">Delete</button></form></li>{% empty %}<li class="list-group-item text-muted">No risk snapshots.</li>{% endfor %}</ul>
+  </div></div></div>
+
+  <div class="col-12 col-xl-6"><div class="card"><div class="card-header">Scan comparisons</div><div class="card-body">
+    <form method="post" class="mb-3">{% csrf_token %}<input type="hidden" name="entity" value="scan_comparison">{{ scan_comparison_form.as_p }}<button class="btn btn-primary">Create scan comparison</button></form>
+    <ul class="list-group">{% for row in scan_comparisons %}<li class="list-group-item d-flex justify-content-between"><span>{{ row.target.name }} ({{ row.from_scan_job_id }} → {{ row.to_scan_job_id }})</span><form method="post">{% csrf_token %}<input type="hidden" name="entity" value="scan_comparison"><input type="hidden" name="action" value="delete"><input type="hidden" name="id" value="{{ row.id }}"><button class="btn btn-outline-danger btn-sm">Delete</button></form></li>{% empty %}<li class="list-group-item text-muted">No scan comparisons.</li>{% endfor %}</ul>
+  </div></div></div>
+</div>
+{% endblock %}
