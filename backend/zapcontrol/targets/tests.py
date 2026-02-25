@@ -6,7 +6,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from core.models import SetupState
-from targets.models import Asset, Finding, Project, RiskSnapshot, ScanComparisonItem, ScanJob, ScanProfile, Target, ZapNode
+from targets.models import Asset, Finding, Project, RawZapResult, RiskSnapshot, ScanComparisonItem, ScanJob, ScanProfile, Target, ZapNode
 from targets.risk import build_finding_fingerprint, build_scan_comparison, compute_risk_score
 
 
@@ -100,3 +100,39 @@ class ContextApiTests(TestCase):
 
         assets = self.client.get(f'/api/context/assets?target_id={self.target.id}').json()
         self.assertTrue(any(a['name'] == 'https://example.test' for a in assets))
+
+
+class AssetsPagesTests(TestCase):
+    def setUp(self):
+        SetupState.objects.update_or_create(pk=1, defaults={'is_complete': True})
+        User = get_user_model()
+        self.user = User.objects.create_user(email='assets@example.com', password='Passw0rd!123', role='security_engineer')
+        self.client.force_login(self.user)
+
+        self.project = Project.objects.create(name='Assets', slug='assets')
+        self.target = Target.objects.create(project=self.project, name='Main', base_url='https://main.test')
+        self.node = ZapNode.objects.create(name='node-assets', base_url='http://zap-assets:8090', enabled=True)
+        self.profile = ScanProfile.objects.create(name='assets-prof', project=self.project, zap_node=self.node)
+        self.job = ScanJob.objects.create(project=self.project, target=self.target, profile=self.profile, status=ScanJob.STATUS_COMPLETED)
+
+    def test_inventory_bootstraps_asset_from_existing_targets(self):
+        self.assertEqual(Asset.objects.count(), 0)
+        response = self.client.get('/assets/')
+        self.assertEqual(response.status_code, 200)
+        self.assertGreaterEqual(Asset.objects.count(), 1)
+        self.assertContains(response, 'main.test')
+
+    def test_raw_results_page_uses_raw_alerts_when_payload_empty(self):
+        RawZapResult.objects.create(
+            scan_job=self.job,
+            payload={},
+            raw_alerts=[{'alert': 'XSS', 'risk': 'High', 'url': 'https://main.test', 'param': 'q'}],
+            metadata={'source': 'test'},
+            size_bytes=12,
+            checksum='abc',
+        )
+        response = self.client.get('/assets/raw/')
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, 'Alerts summary (human-readable)')
+        self.assertContains(response, 'XSS')
+        self.assertContains(response, 'Pretty JSON')

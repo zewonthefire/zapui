@@ -3,11 +3,12 @@ from datetime import timedelta
 
 from django.contrib.auth.decorators import login_required
 from django.core.paginator import Paginator
-from django.db.models import Count, F, OuterRef, Q, Subquery
+from django.db import transaction
+from django.db.models import OuterRef, Subquery
 from django.shortcuts import get_object_or_404, render
 from django.utils import timezone
 
-from .models import Asset, Finding, RawZapResult, RiskSnapshot, ScanComparison, ScanJob
+from .models import Asset, Finding, RawZapResult, RiskSnapshot, ScanComparison, ScanJob, Target
 
 
 def _apply_context_scope(queryset, request):
@@ -39,14 +40,71 @@ def _apply_context_scope(queryset, request):
     return queryset
 
 
+def _asset_key_from_finding(finding: Finding) -> tuple[str, str, str]:
+    instance = finding.instances.order_by('-created_at').first()
+    if instance and instance.url:
+        return instance.url, Asset.TYPE_URL, instance.url
+    if finding.target.base_url:
+        return finding.target.base_url, Asset.TYPE_URL, finding.target.base_url
+    return f'{finding.target.name}-app', Asset.TYPE_APP, ''
+
+
+@transaction.atomic
+def _bootstrap_assets_from_existing_data() -> None:
+    if Asset.objects.exists() and not Finding.objects.filter(asset__isnull=True).exists():
+        return
+
+    for target in Target.objects.select_related('project').all():
+        if not target.assets.exists():
+            latest_job = target.scan_jobs.order_by('-created_at').first()
+            Asset.objects.get_or_create(
+                target=target,
+                name=target.base_url or target.name,
+                asset_type=Asset.TYPE_URL,
+                defaults={
+                    'uri': target.base_url,
+                    'scan_count': target.scan_jobs.count(),
+                    'last_scanned_at': latest_job.completed_at if latest_job else None,
+                    'last_scan_status': latest_job.status if latest_job else '',
+                },
+            )
+
+    missing_asset_findings = Finding.objects.select_related('target').filter(asset__isnull=True)
+    for finding in missing_asset_findings:
+        name, asset_type, uri = _asset_key_from_finding(finding)
+        asset, _ = Asset.objects.get_or_create(
+            target=finding.target,
+            name=name,
+            asset_type=asset_type,
+            defaults={'uri': uri},
+        )
+        finding.asset = asset
+        finding.save(update_fields=['asset'])
+
+
+def _last_payload(raw: RawZapResult) -> dict:
+    if raw.payload:
+        if isinstance(raw.payload, list):
+            return {'alerts': raw.payload}
+        return raw.payload
+    if raw.raw_alerts:
+        return {'alerts': raw.raw_alerts}
+    return {}
+
+
 @login_required
 def assets_inventory(request):
+    _bootstrap_assets_from_existing_data()
+
     latest_snapshot = RiskSnapshot.objects.filter(asset=OuterRef('pk')).order_by('-created_at')
     previous_snapshot = RiskSnapshot.objects.filter(asset=OuterRef('pk')).order_by('-created_at')[1:2]
+    latest_scan = ScanJob.objects.filter(target=OuterRef('target_id')).order_by('-created_at')
 
     assets_qs = Asset.objects.select_related('target__project').annotate(
         latest_score=Subquery(latest_snapshot.values('risk_score')[:1]),
         previous_score=Subquery(previous_snapshot.values('risk_score')[:1]),
+        latest_scan_node=Subquery(latest_scan.values('zap_node__name')[:1]),
+        latest_scan_profile=Subquery(latest_scan.values('profile__name')[:1]),
     )
     assets_qs = _apply_context_scope(assets_qs, request)
     assets_qs = assets_qs.order_by('-last_scanned_at', 'name')
@@ -64,6 +122,7 @@ def assets_inventory(request):
 
 @login_required
 def asset_detail(request, asset_id: int):
+    _bootstrap_assets_from_existing_data()
     asset = get_object_or_404(Asset.objects.select_related('target__project'), pk=asset_id)
     tab = request.GET.get('tab', 'overview')
 
@@ -98,8 +157,24 @@ def raw_results_page(request):
     if scan_job_id:
         qs = qs.filter(scan_job_id=scan_job_id)
     qs = qs.order_by('-fetched_at')
-    selected = qs.first()
-    return render(request, 'targets/assets/raw_results.html', {'results': qs[:100], 'selected': selected})
+
+    selected_result_id = request.GET.get('result_id')
+    selected = qs.filter(id=selected_result_id).first() if selected_result_id else qs.first()
+
+    human_payload = _last_payload(selected) if selected else {}
+    pretty_payload = json.dumps(human_payload, indent=2, ensure_ascii=False)
+    alerts = human_payload.get('alerts', []) if isinstance(human_payload, dict) else []
+
+    return render(
+        request,
+        'targets/assets/raw_results.html',
+        {
+            'results': qs[:100],
+            'selected': selected,
+            'selected_pretty_payload': pretty_payload,
+            'selected_alerts': alerts[:200],
+        },
+    )
 
 
 @login_required

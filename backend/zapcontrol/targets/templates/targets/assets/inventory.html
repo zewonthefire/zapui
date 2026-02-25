@@ -20,7 +20,7 @@
         {% else %}-{% endif %}
       </td>
       <td>{{ asset.findings_open_count_by_sev.High|default:0 }}/{{ asset.findings_open_count_by_sev.Medium|default:0 }}/{{ asset.findings_open_count_by_sev.Low|default:0 }}</td>
-      <td>{{ asset.target.scan_jobs.first.zap_node.name|default:'-' }} / {{ asset.target.scan_jobs.first.profile.name|default:'-' }}</td>
+      <td>{{ asset.latest_scan_node|default:'-' }} / {{ asset.latest_scan_profile|default:'-' }}</td>
     </tr>
   {% empty %}
     <tr><td colspan="8" class="text-center text-muted py-4">No assets found.</td></tr>
