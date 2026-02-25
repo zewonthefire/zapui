@@ -100,6 +100,40 @@ class Target(models.Model):
         return f'{self.project.slug}:{self.name}'
 
 
+class Asset(models.Model):
+    TYPE_HOST = 'host'
+    TYPE_URL = 'url'
+    TYPE_APP = 'app'
+    TYPE_CHOICES = [
+        (TYPE_HOST, 'Host'),
+        (TYPE_URL, 'URL'),
+        (TYPE_APP, 'Application'),
+    ]
+
+    target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='assets')
+    name = models.CharField(max_length=255)
+    asset_type = models.CharField(max_length=16, choices=TYPE_CHOICES, default=TYPE_URL)
+    uri = models.URLField(blank=True)
+    scan_count = models.PositiveIntegerField(default=0)
+    last_scanned_at = models.DateTimeField(blank=True, null=True)
+    last_scan_status = models.CharField(max_length=16, blank=True)
+    current_risk_score = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    findings_open_count_by_sev = models.JSONField(default=dict, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ('name',)
+        unique_together = ('target', 'name', 'asset_type')
+        indexes = [
+            models.Index(fields=['target', 'name']),
+            models.Index(fields=['last_scanned_at']),
+        ]
+
+    def __str__(self):
+        return f'{self.target}:{self.name}'
+
+
 class ScanProfile(models.Model):
     TYPE_BASELINE_LIKE = 'baseline_like'
     TYPE_FULL_ACTIVE = 'full_active'
@@ -146,6 +180,7 @@ class ScanJob(models.Model):
     initiated_by = models.ForeignKey('accounts.User', on_delete=models.SET_NULL, related_name='initiated_scan_jobs', blank=True, null=True)
     zap_node = models.ForeignKey(ZapNode, on_delete=models.SET_NULL, related_name='scan_jobs', blank=True, null=True)
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
+    duration_seconds = models.PositiveIntegerField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
     started_at = models.DateTimeField(blank=True, null=True)
     completed_at = models.DateTimeField(blank=True, null=True)
@@ -155,6 +190,10 @@ class ScanJob(models.Model):
 
     class Meta:
         ordering = ('-created_at',)
+        indexes = [
+            models.Index(fields=['project', 'target', '-created_at']),
+            models.Index(fields=['status', '-created_at']),
+        ]
 
     def __str__(self):
         return f'Job #{self.id} {self.target}'
@@ -162,34 +201,67 @@ class ScanJob(models.Model):
 
 class RawZapResult(models.Model):
     scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='raw_results')
+    payload = models.JSONField(default=dict, blank=True)
+    metadata = models.JSONField(default=dict, blank=True)
+    size_bytes = models.PositiveIntegerField(default=0)
+    checksum = models.CharField(max_length=128, blank=True)
     raw_alerts = models.JSONField(default=list, blank=True)
     fetched_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ('-fetched_at',)
+        indexes = [models.Index(fields=['scan_job', '-fetched_at'])]
 
     def __str__(self):
         return f'Raw alerts for job #{self.scan_job_id}'
 
 
 class Finding(models.Model):
+    STATUS_OPEN = 'open'
+    STATUS_ACCEPTED = 'accepted_risk'
+    STATUS_FALSE_POSITIVE = 'false_positive'
+    STATUS_FIXED = 'fixed'
+    STATUS_CHOICES = [
+        (STATUS_OPEN, 'Open'),
+        (STATUS_ACCEPTED, 'Accepted risk'),
+        (STATUS_FALSE_POSITIVE, 'False positive'),
+        (STATUS_FIXED, 'Fixed'),
+    ]
+
     target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='findings')
+    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='findings', blank=True, null=True)
     scan_job = models.ForeignKey(ScanJob, on_delete=models.SET_NULL, related_name='findings', blank=True, null=True)
     zap_plugin_id = models.CharField(max_length=64)
     title = models.CharField(max_length=255)
     severity = models.CharField(max_length=16, default='Info')
+    confidence = models.CharField(max_length=32, default='Medium')
+    status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_OPEN)
     description = models.TextField(blank=True)
     solution = models.TextField(blank=True)
     reference = models.TextField(blank=True)
     cwe_id = models.CharField(max_length=32, blank=True)
     wasc_id = models.CharField(max_length=32, blank=True)
+    fingerprint = models.CharField(max_length=128, blank=True)
+    raw_result_ref = models.JSONField(default=dict, blank=True)
     first_seen = models.DateTimeField()
     last_seen = models.DateTimeField()
     instances_count = models.PositiveIntegerField(default=0)
 
     class Meta:
-        unique_together = ('target', 'zap_plugin_id', 'title')
         ordering = ('-last_seen',)
+        constraints = [
+            models.UniqueConstraint(
+                fields=['scan_job', 'fingerprint'],
+                condition=~models.Q(fingerprint='') & models.Q(scan_job__isnull=False),
+                name='targets_finding_scan_job_fingerprint_nonempty_uniq',
+            )
+        ]
+        indexes = [
+            models.Index(fields=['asset', '-last_seen']),
+            models.Index(fields=['scan_job']),
+            models.Index(fields=['fingerprint']),
+            models.Index(fields=['severity', 'status']),
+        ]
 
     def __str__(self):
         return f'{self.target_id}:{self.title}'
@@ -214,27 +286,77 @@ class FindingInstance(models.Model):
 class RiskSnapshot(models.Model):
     project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='risk_snapshots', blank=True, null=True)
     target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='risk_snapshots', blank=True, null=True)
+    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='risk_snapshots', blank=True, null=True)
     scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='risk_snapshots')
     risk_score = models.DecimalField(max_digits=12, decimal_places=2)
     counts_by_severity = models.JSONField(default=dict, blank=True)
+    breakdown = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ('-created_at',)
+        indexes = [models.Index(fields=['asset', '-created_at'])]
 
 
 class ScanComparison(models.Model):
+    SCOPE_PROJECT = 'project'
+    SCOPE_TARGET = 'target'
+    SCOPE_ASSET = 'asset'
+    SCOPE_CHOICES = [
+        (SCOPE_PROJECT, 'Project'),
+        (SCOPE_TARGET, 'Target'),
+        (SCOPE_ASSET, 'Asset'),
+    ]
+
     target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='scan_comparisons')
+    asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='scan_comparisons', blank=True, null=True)
     from_scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='comparisons_from')
     to_scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='comparisons_to')
+    scan_a = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='comparisons_a', blank=True, null=True)
+    scan_b = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='comparisons_b', blank=True, null=True)
+    scope = models.CharField(max_length=16, choices=SCOPE_CHOICES, default=SCOPE_TARGET)
     new_finding_ids = models.JSONField(default=list, blank=True)
     resolved_finding_ids = models.JSONField(default=list, blank=True)
     risk_delta = models.DecimalField(max_digits=12, decimal_places=2, default=0)
+    summary = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         ordering = ('-created_at',)
         unique_together = ('target', 'from_scan_job', 'to_scan_job')
+
+
+class ScanComparisonItem(models.Model):
+    CHANGE_NEW = 'new'
+    CHANGE_RESOLVED = 'resolved'
+    CHANGE_CHANGED = 'changed'
+    CHANGE_TYPES = [
+        (CHANGE_NEW, 'New'),
+        (CHANGE_RESOLVED, 'Resolved'),
+        (CHANGE_CHANGED, 'Changed'),
+    ]
+
+    comparison = models.ForeignKey(ScanComparison, on_delete=models.CASCADE, related_name='items')
+    finding_fingerprint = models.CharField(max_length=128)
+    change_type = models.CharField(max_length=16, choices=CHANGE_TYPES)
+    before = models.JSONField(default=dict, blank=True)
+    after = models.JSONField(default=dict, blank=True)
+
+    class Meta:
+        ordering = ('change_type', 'finding_fingerprint')
+        indexes = [models.Index(fields=['comparison', 'change_type'])]
+
+
+class SavedView(models.Model):
+    user = models.ForeignKey('accounts.User', on_delete=models.CASCADE, related_name='saved_views')
+    name = models.CharField(max_length=120)
+    page = models.CharField(max_length=64)
+    filters = models.JSONField(default=dict)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        unique_together = ('user', 'name', 'page')
+        ordering = ('name',)
 
 
 class Report(models.Model):

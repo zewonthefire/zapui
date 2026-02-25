@@ -1,0 +1,21 @@
+{% extends 'core/base.html' %}
+{% block title %}Scan Comparisons{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Scan Comparisons</h1>
+{% include 'targets/assets/partials/context_bar.html' %}
+{% for comparison in comparisons %}
+<div class="card mb-3">
+  <div class="card-header">Comparison #{{ comparison.id }}: scan {{ comparison.scan_a_id }} vs {{ comparison.scan_b_id }}</div>
+  <div class="card-body">
+    <p class="mb-1">Scope: {{ comparison.scope }} | Risk delta: {{ comparison.risk_delta }} | Summary: {{ comparison.summary }}</p>
+    <div class="row">
+      <div class="col-md-4"><h6>New findings</h6><ul>{% for item in comparison.items.all %}{% if item.change_type == 'new' %}<li>{{ item.after.title }} ({{ item.after.severity }})</li>{% endif %}{% endfor %}</ul></div>
+      <div class="col-md-4"><h6>Resolved findings</h6><ul>{% for item in comparison.items.all %}{% if item.change_type == 'resolved' %}<li>{{ item.before.title }} ({{ item.before.severity }})</li>{% endif %}{% endfor %}</ul></div>
+      <div class="col-md-4"><h6>Changed findings</h6><ul>{% for item in comparison.items.all %}{% if item.change_type == 'changed' %}<li>{{ item.before.title }}: {{ item.before.severity }} → {{ item.after.severity }}</li>{% endif %}{% endfor %}</ul></div>
+    </div>
+  </div>
+</div>
+{% empty %}
+<p class="text-muted">No comparisons yet.</p>
+{% endfor %}
+{% endblock %}
