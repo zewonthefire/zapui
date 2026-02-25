@@ -1,0 +1,30 @@
+{% extends "administration/base.html" %}
+{% block admin_content %}
+<h2>ZAP Pools</h2>
+<table>
+  <tr><th>Name</th><th>Description</th><th>Strategy</th><th>Nodes</th><th>Health summary</th></tr>
+  {% for p in pools %}
+  <tr>
+    <td>{{ p.name }}</td>
+    <td>{{ p.description }}</td>
+    <td>{{ p.selection_strategy }}</td>
+    <td>{{ p.nodes.count }}</td>
+    <td>Total nodes: {{ p.nodes.count }}</td>
+  </tr>
+  {% endfor %}
+</table>
+<h3>Create pool</h3>
+<form method="post">{% csrf_token %}
+  <input name="name" required placeholder="Pool name">
+  <textarea name="description" placeholder="Description"></textarea>
+  <select name="selection_strategy">
+    <option value="least_loaded">least_loaded</option>
+    <option value="round_robin">round_robin</option>
+  </select>
+  <select name="nodes" multiple>
+    {% for n in nodes %}<option value="{{ n.id }}">{{ n.name }}</option>{% endfor %}
+  </select>
+  <label>Active <input type="checkbox" name="is_active" checked></label>
+  <button>Create</button>
+</form>
+{% endblock %}

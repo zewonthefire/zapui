@@ -1,0 +1,28 @@
+{% extends "administration/base.html" %}
+{% block admin_content %}
+<h2>ZAP Nodes</h2>
+<table>
+  <tr><th>Name</th><th>Base URL</th><th>API Key</th><th>Status</th><th>Running scans</th><th>Action</th></tr>
+  {% for n in page_obj %}
+  <tr>
+    <td>{{ n.name }}</td><td>{{ n.base_url }}</td><td>********</td><td>{{ n.health_status }}</td><td>-</td>
+    <td>
+      <form method="post" action="{% url 'administration:node-healthcheck' n.id %}">{% csrf_token %}
+        <button>Test connection</button>
+      </form>
+    </td>
+  </tr>
+  {% endfor %}
+</table>
+<h3>Add node</h3>
+<form method="post">{% csrf_token %}
+  <input name="name" required placeholder="Name">
+  <input name="base_url" required placeholder="https://zap:8090">
+  <input name="api_key" type="password" placeholder="API key">
+  <input name="max_concurrent" type="number" value="2">
+  <input name="tags" placeholder="internal,prod">
+  <label>Active <input name="is_active" type="checkbox" checked></label>
+  <button>Add</button>
+</form>
+{% include "administration/_pagination.html" with page_obj=page_obj %}
+{% endblock %}

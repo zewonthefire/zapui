@@ -10,6 +10,7 @@ urlpatterns = [
     path('', include('accounts.urls')),
     path('', include('targets.urls')),
     path('', include('dashboard.urls')),
+    path('administration/', include(('administration.admin_urls', 'administration'), namespace='administration')),
     path('health', views.health, name='health'),
     path('setup', views.setup, name='setup'),
     path('setup/zap-status', views.setup_zap_status, name='setup-zap-status'),
@@ -20,4 +21,5 @@ urlpatterns = [
     path('ops/logs/<str:service>', views.ops_logs, name='ops-logs'),
     path('ops/actions', views.ops_actions, name='ops-actions'),
     path('api/version', views.api_version, name='api-version'),
+    path('api/admin/', include('administration.api_urls')),
 ]

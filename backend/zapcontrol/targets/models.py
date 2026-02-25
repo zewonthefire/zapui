@@ -11,12 +11,13 @@ class ZapNode(models.Model):
 
     STATUS_UNKNOWN = 'unknown'
     STATUS_HEALTHY = 'healthy'
-    STATUS_UNREACHABLE = 'unreachable'
+    STATUS_UNHEALTHY = 'unhealthy'
+    STATUS_UNREACHABLE = STATUS_UNHEALTHY
     STATUS_DISABLED = 'disabled'
     STATUS_CHOICES = [
         (STATUS_UNKNOWN, 'Unknown'),
         (STATUS_HEALTHY, 'Healthy'),
-        (STATUS_UNREACHABLE, 'Unreachable'),
+        (STATUS_UNHEALTHY, 'Unhealthy'),
         (STATUS_DISABLED, 'Disabled'),
     ]
 
@@ -28,6 +29,7 @@ class ZapNode(models.Model):
     docker_container_name = models.CharField(max_length=255, blank=True, null=True)
     version = models.CharField(max_length=64, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     last_health_check = models.DateTimeField(blank=True, null=True)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_UNKNOWN)
     last_latency_ms = models.PositiveIntegerField(blank=True, null=True)
@@ -35,6 +37,8 @@ class ZapNode(models.Model):
     max_concurrent = models.PositiveIntegerField(default=2)
     last_seen_at = models.DateTimeField(blank=True, null=True)
     health_status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_UNKNOWN)
+    tags = models.JSONField(default=list, blank=True)
+    last_error = models.TextField(blank=True)
 
     class Meta:
         ordering = ('name',)
@@ -128,6 +132,7 @@ class Asset(models.Model):
     findings_open_count_by_sev = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ('name',)
@@ -162,6 +167,7 @@ class ScanProfile(models.Model):
     config = models.JSONField(default=dict, blank=True)
     zap_policy_name = models.CharField(max_length=120, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ('name',)
@@ -209,6 +215,7 @@ class ScanJob(models.Model):
     status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_PENDING)
     duration_seconds = models.PositiveIntegerField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
     started_at = models.DateTimeField(blank=True, null=True)
     completed_at = models.DateTimeField(blank=True, null=True)
     error_message = models.TextField(blank=True)
@@ -314,6 +321,7 @@ class FindingInstance(models.Model):
     other = models.TextField(blank=True)
     method = models.CharField(max_length=16, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('finding', 'scan_job', 'url', 'parameter', 'evidence')
@@ -330,6 +338,7 @@ class RiskSnapshot(models.Model):
     counts_by_severity = models.JSONField(default=dict, blank=True)
     breakdown = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ('-created_at',)
@@ -358,6 +367,7 @@ class ScanComparison(models.Model):
     risk_delta = models.DecimalField(max_digits=12, decimal_places=2, default=0)
     summary = models.JSONField(default=dict, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ('-created_at',)
@@ -391,6 +401,7 @@ class SavedView(models.Model):
     page = models.CharField(max_length=64)
     filters = models.JSONField(default=dict)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ('user', 'name', 'page')
@@ -404,6 +415,7 @@ class Report(models.Model):
     json_file = models.FileField(upload_to='reports/json/')
     pdf_file = models.FileField(upload_to='reports/pdf/')
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ('-created_at',)
@@ -434,6 +446,7 @@ class ScanRun(models.Model):
     error_message = models.TextField(blank=True)
     logs = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         ordering = ('-created_at',)
