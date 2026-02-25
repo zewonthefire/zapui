@@ -1,0 +1,25 @@
+{% extends 'core/base.html' %}
+
+{% block title %}{{ page_title }}{% endblock %}
+
+{% block content %}
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h1 class="h3 mb-0">{{ page_title }}</h1>
+    <div class="btn-group">
+      <a class="btn btn-outline-secondary btn-sm" href="/dashboard/overview/">Overview</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/dashboard/risk/">Risk</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/dashboard/findings/">Findings</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/dashboard/coverage/">Coverage</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/dashboard/changes/">Changes</a>
+      <a class="btn btn-outline-secondary btn-sm" href="/dashboard/operations/">Operations</a>
+    </div>
+  </div>
+
+  {% include 'dashboard/partials/context_bar.html' %}
+
+  {% if empty_state %}
+    <div class="alert alert-info">No scan data available for this context. Create a scan job to populate the dashboards.</div>
+  {% endif %}
+
+  {% block dashboard_content %}{% endblock %}
+{% endblock %}

@@ -1,0 +1,19 @@
+{% extends 'dashboard/page_base.html' %}
+{% block dashboard_content %}
+<div class="row g-3 mb-3">
+  <div class="col-md-2"><a href="/dashboard/risk/?{{ request.GET.urlencode }}" class="text-decoration-none"><div class="card card-body"><small>Current Risk</small><strong>{{ data.kpis.current_risk_score }}</strong></div></a></div>
+  <div class="col-md-2"><a href="/dashboard/risk/?{{ request.GET.urlencode }}" class="text-decoration-none"><div class="card card-body"><small>Risk Delta</small><strong>{{ data.kpis.risk_delta }}</strong></div></a></div>
+  <div class="col-md-2"><a href="/dashboard/findings/?{{ request.GET.urlencode }}" class="text-decoration-none"><div class="card card-body"><small>High/Med/Low</small><strong>{{ data.kpis.open_findings.high }}/{{ data.kpis.open_findings.medium }}/{{ data.kpis.open_findings.low }}</strong></div></a></div>
+  <div class="col-md-2"><a href="/dashboard/findings/?{{ request.GET.urlencode }}" class="text-decoration-none"><div class="card card-body"><small>New findings</small><strong>{{ data.kpis.new_findings }}</strong></div></a></div>
+  <div class="col-md-2"><a href="/dashboard/coverage/?{{ request.GET.urlencode }}" class="text-decoration-none"><div class="card card-body"><small>Coverage</small><strong>{{ data.kpis.coverage_pct }}%</strong></div></a></div>
+  <div class="col-md-2"><a href="/dashboard/operations/?{{ request.GET.urlencode }}" class="text-decoration-none"><div class="card card-body"><small>Success rate</small><strong>{{ data.kpis.scan_success_rate }}%</strong></div></a></div>
+</div>
+<div class="row g-3">
+  <div class="col-md-6">
+    <div class="card"><div class="card-header">Risk trend</div><div class="card-body"><ul>{% for p in data.risk_trend %}<li>{{ p.day }}: {{ p.value }}</li>{% empty %}<li>No data</li>{% endfor %}</ul></div></div>
+  </div>
+  <div class="col-md-6">
+    <div class="card"><div class="card-header">Top assets by risk</div><div class="card-body"><ul>{% for row in data.top_assets_by_risk %}<li><a href="/targets/{{ row.target_id }}">{{ row.target__name }}</a> — {{ row.max_risk }}</li>{% empty %}<li>No data</li>{% endfor %}</ul></div></div>
+  </div>
+</div>
+{% endblock %}

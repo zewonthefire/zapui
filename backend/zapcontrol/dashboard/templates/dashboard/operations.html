@@ -1,0 +1,9 @@
+{% extends 'dashboard/page_base.html' %}
+{% block dashboard_content %}
+<div class="row g-3">
+  <div class="col-md-4"><div class="card"><div class="card-header">Running scans</div><div class="card-body"><ul>{% for row in data.running_scans %}<li>#{{ row.id }} {{ row.target__name }}</li>{% empty %}<li>None</li>{% endfor %}</ul></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-header">Queue</div><div class="card-body"><ul>{% for row in data.queue %}<li>#{{ row.id }} {{ row.target__name }}</li>{% empty %}<li>None</li>{% endfor %}</ul></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-header">Failed scans</div><div class="card-body"><ul>{% for row in data.failed_scans %}<li>#{{ row.id }} {{ row.target__name }}</li>{% empty %}<li>None</li>{% endfor %}</ul></div></div></div>
+</div>
+<div class="card mt-3"><div class="card-header">Node pool status</div><div class="card-body"><ul>{% for node in data.node_pool_status %}<li>{{ node.name }} — {{ node.status }}{% if node.last_latency_ms %} ({{ node.last_latency_ms }} ms){% endif %}</li>{% empty %}<li>No nodes</li>{% endfor %}</ul></div></div>
+{% endblock %}
