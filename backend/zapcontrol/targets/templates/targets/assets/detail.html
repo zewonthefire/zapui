@@ -1,0 +1,33 @@
+{% extends 'core/base.html' %}
+{% block title %}Asset {{ asset.name }}{% endblock %}
+{% block content %}
+<h1 class="h3">Asset: {{ asset.name }}</h1>
+<p class="text-muted">{{ asset.target.project.name }} / {{ asset.target.name }}</p>
+{% include 'targets/assets/partials/context_bar.html' %}
+<ul class="nav nav-tabs mb-3">
+  {% for t in 'overview,findings,risk,scans,raw,comparisons'.split(',') %}
+  <li class="nav-item"><a class="nav-link {% if tab == t %}active{% endif %}" href="?tab={{ t }}">{{ t|title }}</a></li>
+  {% endfor %}
+</ul>
+
+{% if tab == 'overview' %}
+<div class="row g-3">
+  <div class="col-md-4"><div class="card"><div class="card-body"><div class="text-muted">Current risk</div><div class="display-6">{{ asset.current_risk_score }}</div></div></div></div>
+  <div class="col-md-8"><div class="card"><div class="card-body"><h6>Top findings</h6><ul>{% for f in findings|slice:':5' %}<li>{{ f.title }} ({{ f.severity }})</li>{% empty %}<li>No findings</li>{% endfor %}</ul></div></div></div>
+</div>
+{% elif tab == 'findings' %}
+<table class="table table-sm"><thead><tr><th>Title</th><th>Severity</th><th>Confidence</th><th>Status</th><th>First/Last seen</th></tr></thead><tbody>{% for f in findings %}<tr><td>{{ f.title }}</td><td>{{ f.severity }}</td><td>{{ f.confidence }}</td><td>{{ f.status }}</td><td>{{ f.first_seen }} / {{ f.last_seen }}</td></tr>{% empty %}<tr><td colspan="5">No findings</td></tr>{% endfor %}</tbody></table>
+{% elif tab == 'risk' %}
+<table class="table table-sm"><thead><tr><th>Date</th><th>Risk score</th><th>Breakdown</th></tr></thead><tbody>{% for s in risk_history %}<tr><td>{{ s.created_at }}</td><td>{{ s.risk_score }}</td><td>{{ s.counts_by_severity }}</td></tr>{% endfor %}</tbody></table>
+{% elif tab == 'scans' %}
+<table class="table table-sm"><thead><tr><th>ID</th><th>Status</th><th>Profile</th><th>Node</th><th>Completed</th></tr></thead><tbody>{% for scan in scans %}<tr><td>{{ scan.id }}</td><td>{{ scan.status }}</td><td>{{ scan.profile.name }}</td><td>{{ scan.zap_node.name }}</td><td>{{ scan.completed_at }}</td></tr>{% endfor %}</tbody></table>
+{% elif tab == 'raw' %}
+{% for raw in raw_results %}
+<div class="card mb-2"><div class="card-header">Scan #{{ raw.scan_job_id }} - {{ raw.fetched_at }}</div><div class="card-body"><pre style="max-height:280px;overflow:auto">{{ raw.payload|pprint }}</pre></div></div>
+{% endfor %}
+{% elif tab == 'comparisons' %}
+{% for c in comparisons %}
+<div class="card mb-2"><div class="card-body"><strong>#{{ c.id }}</strong> {{ c.scan_a_id }} vs {{ c.scan_b_id }} - Δ {{ c.risk_delta }}<ul>{% for i in c.items.all|slice:':8' %}<li>{{ i.change_type }} - {{ i.finding_fingerprint|slice:':12' }}</li>{% endfor %}</ul></div></div>
+{% empty %}<p class="text-muted">No comparisons</p>{% endfor %}
+{% endif %}
+{% endblock %}

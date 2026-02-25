@@ -1,3 +1,5 @@
+import hashlib
+import json
 import time
 from datetime import timedelta
 
@@ -147,16 +149,28 @@ def start_scan_job(self, scan_job_id: int):
         _poll_until_complete(client.active_status, job.zap_ascan_id, job.profile.max_duration_minutes)
 
         alerts = client.alerts(job.target.base_url)
-        RawZapResult.objects.create(scan_job=job, raw_alerts=alerts)
+        payload = {'alerts': alerts}
+        encoded = json.dumps(payload, sort_keys=True).encode('utf-8')
+        RawZapResult.objects.create(
+            scan_job=job,
+            payload=payload,
+            raw_alerts=alerts,
+            metadata={'source': 'zap_api', 'target': job.target.base_url},
+            size_bytes=len(encoded),
+            checksum=hashlib.sha256(encoded).hexdigest(),
+        )
         normalize_alerts_to_findings(job, alerts)
         create_risk_snapshots(job)
         create_scan_comparison(job)
         generate_scan_report(job)
 
+        completed_at = timezone.now()
         job.status = ScanJob.STATUS_COMPLETED
-        job.completed_at = timezone.now()
+        job.completed_at = completed_at
+        if job.started_at:
+            job.duration_seconds = int((completed_at - job.started_at).total_seconds())
         job.error_message = ''
-        job.save(update_fields=['status', 'completed_at', 'error_message'])
+        job.save(update_fields=['status', 'completed_at', 'duration_seconds', 'error_message'])
     except RETRYABLE_EXCEPTIONS as exc:
         if self.request.retries >= self.max_retries:
             job.status = ScanJob.STATUS_FAILED
