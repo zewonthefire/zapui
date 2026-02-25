@@ -1,0 +1,65 @@
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="row g-2" id="context-bar" data-current-query="{{ request.GET.urlencode }}">
+      <div class="col-md-2"><select class="form-select" name="project" id="ctx-project"></select></div>
+      <div class="col-md-2"><select class="form-select" name="target" id="ctx-target"></select></div>
+      <div class="col-md-2"><select class="form-select" name="asset" id="ctx-asset"></select></div>
+      <div class="col-md-2"><select class="form-select" name="node" id="ctx-node"></select></div>
+      <div class="col-md-2"><select class="form-select" name="profile" id="ctx-profile"></select></div>
+      <div class="col-md-1">
+        <select class="form-select" name="range" id="ctx-range">
+          <option value="all">All time</option>
+          <option value="7">7d</option>
+          <option value="30">30d</option>
+          <option value="90">90d</option>
+        </select>
+      </div>
+      <div class="col-md-1"><select class="form-select" name="scan" id="ctx-scan"></select></div>
+    </div>
+  </div>
+</div>
+<script>
+(async function() {
+  const params = new URLSearchParams(window.location.search);
+  const fields = [
+    ['project', '/api/context/projects'],
+    ['target', '/api/context/targets?project_id={project}'],
+    ['asset', '/api/context/assets?target_id={target}'],
+    ['node', '/api/context/nodes'],
+    ['profile', '/api/context/profiles?project_id={project}'],
+    ['scan', '/api/context/scans?target_id={target}&range={range}'],
+  ];
+
+  function endpoint(url) {
+    return url
+      .replace('{project}', params.get('project') || 'all')
+      .replace('{target}', params.get('target') || 'all')
+      .replace('{range}', params.get('range') || 'all');
+  }
+
+  async function loadSelect(name, url) {
+    const res = await fetch(endpoint(url), {headers: {'X-Requested-With': 'XMLHttpRequest'}});
+    const options = await res.json();
+    const select = document.getElementById(`ctx-${name}`);
+    select.innerHTML = options.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
+    select.value = params.get(name) || (name === 'scan' ? 'latest' : 'all');
+  }
+
+  for (const [name, url] of fields) { await loadSelect(name, url); }
+  document.getElementById('ctx-range').value = params.get('range') || 'all';
+
+  document.querySelectorAll('#context-bar select').forEach(el => {
+    el.addEventListener('change', async () => {
+      params.set(el.name, el.value);
+      if (el.name === 'project') {
+        params.set('target', 'all');
+        params.set('asset', 'all');
+      }
+      if (el.name === 'target') {
+        params.set('asset', 'all');
+      }
+      window.location.search = params.toString();
+    });
+  });
+})();
+</script>
