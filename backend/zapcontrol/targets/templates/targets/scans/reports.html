@@ -1,0 +1,5 @@
+{% extends 'core/base.html' %}
+{% block content %}
+{% include 'targets/scans/_context_bar.html' %}
+<div class="card"><div class="card-body"><h5>Reports</h5><table class="table table-sm"><thead><tr><th>Run</th><th>Project</th><th>Target</th><th>Created</th><th>Download</th></tr></thead><tbody>{% for r in reports %}<tr><td>{{ r.scan_run_id }}</td><td>{{ r.scan_run.scan_job.project.name }}</td><td>{{ r.scan_run.scan_job.target.name }}</td><td>{{ r.created_at }}</td><td><a href="/scans/runs/{{ r.scan_run_id }}/report/html/">HTML</a></td></tr>{% endfor %}</tbody></table></div></div>
+{% endblock %}

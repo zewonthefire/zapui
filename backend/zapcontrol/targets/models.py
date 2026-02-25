@@ -31,6 +31,10 @@ class ZapNode(models.Model):
     last_health_check = models.DateTimeField(blank=True, null=True)
     status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_UNKNOWN)
     last_latency_ms = models.PositiveIntegerField(blank=True, null=True)
+    is_active = models.BooleanField(default=True)
+    max_concurrent = models.PositiveIntegerField(default=2)
+    last_seen_at = models.DateTimeField(blank=True, null=True)
+    health_status = models.CharField(max_length=32, choices=STATUS_CHOICES, default=STATUS_UNKNOWN)
 
     class Meta:
         ordering = ('name',)
@@ -91,6 +95,9 @@ class Target(models.Model):
     auth_type = models.CharField(max_length=16, choices=AUTH_TYPE_CHOICES, default=AUTH_NONE)
     auth_config = models.JSONField(default=dict, blank=True)
     notes = models.TextField(blank=True)
+    include_regex = models.CharField(max_length=255, blank=True)
+    exclude_regex = models.CharField(max_length=255, blank=True)
+    enabled = models.BooleanField(default=True)
 
     class Meta:
         unique_together = ('project', 'name')
@@ -152,6 +159,8 @@ class ScanProfile(models.Model):
     spider_enabled = models.BooleanField(default=True)
     max_duration_minutes = models.PositiveIntegerField(default=30)
     extra_zap_options = models.JSONField(default=dict, blank=True)
+    config = models.JSONField(default=dict, blank=True)
+    zap_policy_name = models.CharField(max_length=120, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -163,6 +172,24 @@ class ScanProfile(models.Model):
 
 
 class ScanJob(models.Model):
+    NODE_AUTO = 'auto'
+    NODE_PINNED = 'pinned'
+    NODE_STRATEGY_CHOICES = [
+        (NODE_AUTO, 'Auto'),
+        (NODE_PINNED, 'Pinned'),
+    ]
+
+    SCHEDULE_MANUAL = 'manual'
+    SCHEDULE_INTERVAL = 'interval'
+    SCHEDULE_DAILY = 'daily'
+    SCHEDULE_WEEKLY = 'weekly'
+    SCHEDULE_TYPE_CHOICES = [
+        (SCHEDULE_MANUAL, 'Manual'),
+        (SCHEDULE_INTERVAL, 'Interval'),
+        (SCHEDULE_DAILY, 'Daily'),
+        (SCHEDULE_WEEKLY, 'Weekly'),
+    ]
+
     STATUS_PENDING = 'pending'
     STATUS_RUNNING = 'running'
     STATUS_COMPLETED = 'completed'
@@ -187,6 +214,13 @@ class ScanJob(models.Model):
     error_message = models.TextField(blank=True)
     zap_spider_id = models.CharField(max_length=64, blank=True)
     zap_ascan_id = models.CharField(max_length=64, blank=True)
+    node_strategy = models.CharField(max_length=16, choices=NODE_STRATEGY_CHOICES, default=NODE_AUTO)
+    schedule_type = models.CharField(max_length=16, choices=SCHEDULE_TYPE_CHOICES, default=SCHEDULE_MANUAL)
+    schedule_interval_minutes = models.PositiveIntegerField(blank=True, null=True)
+    schedule_weekday = models.PositiveSmallIntegerField(blank=True, null=True)
+    schedule_time = models.TimeField(blank=True, null=True)
+    enabled = models.BooleanField(default=True)
+    last_scheduled_at = models.DateTimeField(blank=True, null=True)
 
     class Meta:
         ordering = ('-created_at',)
@@ -200,7 +234,8 @@ class ScanJob(models.Model):
 
 
 class RawZapResult(models.Model):
-    scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='raw_results')
+    scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='raw_results', blank=True, null=True)
+    scan_run = models.ForeignKey('ScanRun', on_delete=models.CASCADE, related_name='raw_results', blank=True, null=True)
     payload = models.JSONField(default=dict, blank=True)
     metadata = models.JSONField(default=dict, blank=True)
     size_bytes = models.PositiveIntegerField(default=0)
@@ -231,6 +266,7 @@ class Finding(models.Model):
     target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='findings')
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='findings', blank=True, null=True)
     scan_job = models.ForeignKey(ScanJob, on_delete=models.SET_NULL, related_name='findings', blank=True, null=True)
+    scan_run = models.ForeignKey('ScanRun', on_delete=models.SET_NULL, related_name='findings', blank=True, null=True)
     zap_plugin_id = models.CharField(max_length=64)
     title = models.CharField(max_length=255)
     severity = models.CharField(max_length=16, default='Info')
@@ -270,6 +306,7 @@ class Finding(models.Model):
 class FindingInstance(models.Model):
     finding = models.ForeignKey(Finding, on_delete=models.CASCADE, related_name='instances')
     scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='finding_instances')
+    scan_run = models.ForeignKey('ScanRun', on_delete=models.CASCADE, related_name='finding_instances', blank=True, null=True)
     url = models.URLField(max_length=2048, blank=True)
     parameter = models.CharField(max_length=255, blank=True)
     evidence = models.TextField(blank=True)
@@ -288,6 +325,7 @@ class RiskSnapshot(models.Model):
     target = models.ForeignKey(Target, on_delete=models.CASCADE, related_name='risk_snapshots', blank=True, null=True)
     asset = models.ForeignKey(Asset, on_delete=models.CASCADE, related_name='risk_snapshots', blank=True, null=True)
     scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='risk_snapshots')
+    scan_run = models.ForeignKey('ScanRun', on_delete=models.CASCADE, related_name='risk_snapshots', blank=True, null=True)
     risk_score = models.DecimalField(max_digits=12, decimal_places=2)
     counts_by_severity = models.JSONField(default=dict, blank=True)
     breakdown = models.JSONField(default=dict, blank=True)
@@ -361,6 +399,7 @@ class SavedView(models.Model):
 
 class Report(models.Model):
     scan_job = models.OneToOneField(ScanJob, on_delete=models.CASCADE, related_name='report')
+    scan_run = models.ForeignKey('ScanRun', on_delete=models.CASCADE, related_name='reports', blank=True, null=True)
     html_file = models.FileField(upload_to='reports/html/')
     json_file = models.FileField(upload_to='reports/json/')
     pdf_file = models.FileField(upload_to='reports/pdf/')
@@ -368,3 +407,38 @@ class Report(models.Model):
 
     class Meta:
         ordering = ('-created_at',)
+
+
+class ScanRun(models.Model):
+    STATUS_QUEUED = 'queued'
+    STATUS_RUNNING = 'running'
+    STATUS_SUCCEEDED = 'succeeded'
+    STATUS_FAILED = 'failed'
+    STATUS_CANCELED = 'canceled'
+    STATUS_CHOICES = [
+        (STATUS_QUEUED, 'Queued'),
+        (STATUS_RUNNING, 'Running'),
+        (STATUS_SUCCEEDED, 'Succeeded'),
+        (STATUS_FAILED, 'Failed'),
+        (STATUS_CANCELED, 'Canceled'),
+    ]
+
+    scan_job = models.ForeignKey(ScanJob, on_delete=models.CASCADE, related_name='runs')
+    zap_node = models.ForeignKey(ZapNode, on_delete=models.SET_NULL, related_name='runs', blank=True, null=True)
+    status = models.CharField(max_length=16, choices=STATUS_CHOICES, default=STATUS_QUEUED)
+    started_at = models.DateTimeField(blank=True, null=True)
+    finished_at = models.DateTimeField(blank=True, null=True)
+    duration_ms = models.PositiveBigIntegerField(blank=True, null=True)
+    spider_progress = models.PositiveSmallIntegerField(default=0)
+    ascan_progress = models.PositiveSmallIntegerField(default=0)
+    error_message = models.TextField(blank=True)
+    logs = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ('-created_at',)
+        indexes = [
+            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=['scan_job', 'created_at']),
+            models.Index(fields=['zap_node', 'status']),
+        ]

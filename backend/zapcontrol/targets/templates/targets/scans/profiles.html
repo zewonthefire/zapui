@@ -1,0 +1,8 @@
+{% extends 'core/base.html' %}
+{% block content %}
+{% include 'targets/scans/_context_bar.html' %}
+<div class="row">
+  <div class="col-md-4"><div class="card"><div class="card-body"><h5>Create</h5><form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Save</button></form></div></div></div>
+  <div class="col-md-8"><div class="card"><div class="card-body"><h5>List</h5><table class="table table-sm"><tbody>{% for i in items %}<tr><td>{{ i }}</td></tr>{% empty %}<tr><td>No items</td></tr>{% endfor %}</tbody></table></div></div></div>
+</div>
+{% endblock %}

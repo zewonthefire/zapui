@@ -1,18 +1,21 @@
 from datetime import timedelta
 
-from django.db.models import Q
+from django.db.models import Count, Q
+from django.shortcuts import get_object_or_404
 from django.utils import timezone
-from rest_framework import generics, pagination
+from rest_framework import generics, pagination, status
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import Asset, Finding, Project, RawZapResult, ScanComparison, ScanJob, ScanProfile, Target, ZapNode
+from .models import Asset, Finding, Project, RawZapResult, Report, ScanJob, ScanProfile, ScanRun, Target, ZapNode
+from .scan_engine import enqueue_scan
 from .serializers import (
-    AssetSerializer,
     FindingSerializer,
     RawZapResultSerializer,
-    ScanComparisonSerializer,
     ScanJobSerializer,
+    ScanRunSerializer,
+    ReportSerializer,
 )
 
 
@@ -30,21 +33,37 @@ def _apply_range(qs, request, field='created_at'):
     return qs
 
 
+def _scope_filter(qs, request):
+    if request.GET.get('project_id') and request.GET.get('project_id') != 'all':
+        qs = qs.filter(project_id=request.GET['project_id'])
+    if request.GET.get('target_id') and request.GET.get('target_id') != 'all':
+        qs = qs.filter(target_id=request.GET['target_id'])
+    if request.GET.get('asset_id') and request.GET.get('asset_id') != 'all':
+        qs = qs.filter(findings__asset_id=request.GET['asset_id'])
+    return qs
+
+
 class ContextProjectsApi(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         return Response([{'id': 'all', 'name': 'All projects'}] + list(Project.objects.values('id', 'name')))
 
 
 class ContextTargetsApi(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         project_id = request.GET.get('project_id')
-        qs = Target.objects.all()
+        qs = Target.objects.filter(enabled=True)
         if project_id and project_id != 'all':
             qs = qs.filter(project_id=project_id)
         return Response([{'id': 'all', 'name': 'All targets'}] + list(qs.values('id', 'name')))
 
 
 class ContextAssetsApi(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         target_id = request.GET.get('target_id')
         qs = Asset.objects.all()
@@ -54,12 +73,16 @@ class ContextAssetsApi(APIView):
 
 
 class ContextNodesApi(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
-        qs = ZapNode.objects.filter(enabled=True)
+        qs = ZapNode.objects.filter(enabled=True, is_active=True)
         return Response([{'id': 'all', 'name': 'All scanners'}] + list(qs.values('id', 'name')))
 
 
 class ContextProfilesApi(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
         qs = ScanProfile.objects.all()
         project_id = request.GET.get('project_id')
@@ -69,91 +92,81 @@ class ContextProfilesApi(APIView):
 
 
 class ContextScansApi(APIView):
+    permission_classes = [IsAuthenticated]
+
     def get(self, request):
-        qs = ScanJob.objects.select_related('target').all()
-        target_id = request.GET.get('target_id')
-        if target_id and target_id != 'all':
-            qs = qs.filter(target_id=target_id)
+        qs = ScanRun.objects.select_related('scan_job__target')
+        qs = _scope_filter(qs, request)
         qs = _apply_range(qs, request)
         payload = [{'id': 'latest', 'name': 'Latest'}] + [
-            {'id': scan.id, 'name': f'#{scan.id} {scan.target.name} ({scan.status})'} for scan in qs.order_by('-created_at')[:100]
+            {'id': run.id, 'name': f'Run #{run.id} {run.scan_job.target.name} ({run.status})'} for run in qs.order_by('-created_at')[:100]
         ]
         return Response(payload)
 
 
-class AssetListApi(generics.ListAPIView):
-    serializer_class = AssetSerializer
-    pagination_class = DefaultPagination
-    ordering_fields = ['name', 'last_scanned_at', 'scan_count', 'current_risk_score']
-
-    def get_queryset(self):
-        qs = Asset.objects.select_related('target__project').all()
-        params = self.request.GET
-        if params.get('project'):
-            qs = qs.filter(target__project_id=params['project'])
-        if params.get('target'):
-            qs = qs.filter(target_id=params['target'])
-        if params.get('node'):
-            qs = qs.filter(findings__scan_job__zap_node_id=params['node'])
-        if params.get('profile'):
-            qs = qs.filter(findings__scan_job__profile_id=params['profile'])
-        qs = _apply_range(qs, self.request, field='last_scanned_at').distinct()
-        return qs
-
-
-class AssetFindingsApi(generics.ListAPIView):
-    serializer_class = FindingSerializer
-    pagination_class = DefaultPagination
-
-    def get_queryset(self):
-        qs = Finding.objects.filter(asset_id=self.kwargs['asset_id']).select_related('scan_job')
-        params = self.request.GET
-        for key in ['status', 'severity', 'confidence']:
-            if params.get(key):
-                qs = qs.filter(**{key: params[key]})
-        if params.get('search'):
-            qs = qs.filter(Q(title__icontains=params['search']) | Q(description__icontains=params['search']))
-        return qs.order_by(params.get('ordering', '-last_seen'))
-
-
-class ScanListApi(generics.ListAPIView):
+class JobsApi(generics.ListAPIView):
     serializer_class = ScanJobSerializer
     pagination_class = DefaultPagination
 
     def get_queryset(self):
-        qs = ScanJob.objects.select_related('project', 'target', 'profile', 'zap_node').all()
+        qs = ScanJob.objects.select_related('project', 'target', 'profile', 'zap_node').annotate(
+            last_run_status=Count('runs')
+        )
+        return _scope_filter(qs, self.request).order_by('-created_at').distinct()
+
+
+class RunsApi(generics.ListAPIView):
+    serializer_class = ScanRunSerializer
+    pagination_class = DefaultPagination
+
+    def get_queryset(self):
+        qs = ScanRun.objects.select_related('scan_job__project', 'scan_job__target', 'scan_job__profile', 'zap_node')
         params = self.request.GET
-        if params.get('project'):
-            qs = qs.filter(project_id=params['project'])
-        if params.get('target'):
-            qs = qs.filter(target_id=params['target'])
-        if params.get('asset'):
-            qs = qs.filter(findings__asset_id=params['asset'])
-        return _apply_range(qs, self.request).order_by('-created_at').distinct()
+        if params.get('status'):
+            qs = qs.filter(status=params['status'])
+        if params.get('node') and params.get('node') != 'all':
+            qs = qs.filter(zap_node_id=params['node'])
+        qs = _apply_range(_scope_filter(qs, self.request), self.request)
+        return qs.order_by('-created_at')
 
 
-class RawResultsApi(generics.ListAPIView):
+class RunDetailApi(generics.RetrieveAPIView):
+    queryset = ScanRun.objects.select_related('scan_job__project', 'scan_job__target', 'scan_job__profile', 'zap_node')
+    serializer_class = ScanRunSerializer
+
+
+class RunFindingsApi(generics.ListAPIView):
+    serializer_class = FindingSerializer
+    pagination_class = DefaultPagination
+
+    def get_queryset(self):
+        qs = Finding.objects.filter(scan_run_id=self.kwargs['id'])
+        if self.request.GET.get('search'):
+            s = self.request.GET['search']
+            qs = qs.filter(Q(title__icontains=s) | Q(description__icontains=s))
+        if self.request.GET.get('severity'):
+            qs = qs.filter(severity=self.request.GET['severity'])
+        return qs.order_by(self.request.GET.get('ordering', '-last_seen'))
+
+
+class RunRawApi(generics.ListAPIView):
     serializer_class = RawZapResultSerializer
     pagination_class = DefaultPagination
 
     def get_queryset(self):
-        qs = RawZapResult.objects.select_related('scan_job').order_by('-fetched_at')
-        if self.request.GET.get('scan_job_id'):
-            qs = qs.filter(scan_job_id=self.request.GET['scan_job_id'])
-        return qs
+        return RawZapResult.objects.filter(scan_run_id=self.kwargs['id']).order_by('-fetched_at')
 
 
-class ComparisonsApi(generics.ListAPIView):
-    serializer_class = ScanComparisonSerializer
-    pagination_class = DefaultPagination
+class RunReportApi(APIView):
+    def get(self, request, id):
+        report = get_object_or_404(Report, scan_run_id=id)
+        return Response(ReportSerializer(report).data)
 
-    def get_queryset(self):
-        qs = ScanComparison.objects.select_related('target', 'asset', 'scan_a', 'scan_b').prefetch_related('items').all()
-        params = self.request.GET
-        if params.get('scan_a'):
-            qs = qs.filter(scan_a_id=params['scan_a'])
-        if params.get('scan_b'):
-            qs = qs.filter(scan_b_id=params['scan_b'])
-        if params.get('scope'):
-            qs = qs.filter(scope=params['scope'])
-        return qs.order_by('-created_at')
+
+class EnqueueApi(APIView):
+    permission_classes = [IsAuthenticated]
+
+    def post(self, request):
+        scan_job_id = request.data.get('scan_job_id')
+        run = enqueue_scan(scan_job_id)
+        return Response({'run_id': run.id, 'status': run.status}, status=status.HTTP_201_CREATED)

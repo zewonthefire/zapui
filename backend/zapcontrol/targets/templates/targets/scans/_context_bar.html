@@ -1,0 +1,31 @@
+<div class="card mb-3">
+  <div class="card-body">
+    <div class="alert alert-warning py-2 mb-3"><strong>Safety:</strong> Only scan targets you own or have explicit permission to test.</div>
+    <div class="row g-2">
+      <div class="col-md-2"><select class="form-select" name="project_id" id="ctx-project"><option value="all">All Projects</option>{% for p in projects %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><select class="form-select" name="target_id" id="ctx-target"><option value="all">All Targets</option></select></div>
+      <div class="col-md-2"><select class="form-select" name="asset_id" id="ctx-asset"><option value="all">All Assets</option></select></div>
+      <div class="col-md-2"><select class="form-select" name="node_id"><option value="all">All Scanners</option>{% for n in nodes %}<option value="{{ n.id }}">{{ n.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-2"><select class="form-select" name="profile_id"><option value="all">All Profiles</option>{% for p in profiles %}<option value="{{ p.id }}">{{ p.name }}</option>{% endfor %}</select></div>
+      <div class="col-md-1"><select class="form-select" name="range"><option value="7">7d</option><option value="30">30d</option><option value="90">90d</option><option value="all">All</option></select></div>
+      <div class="col-md-1"><select class="form-select" name="scan_id"><option value="latest">Latest</option></select></div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  const project = document.getElementById('ctx-project');
+  const target = document.getElementById('ctx-target');
+  const asset = document.getElementById('ctx-asset');
+  if (!project) return;
+  project.addEventListener('change', async ()=>{
+    const r = await fetch(`/api/context/targets?project_id=${project.value}`); const data = await r.json();
+    target.innerHTML = data.map(x=>`<option value="${x.id}">${x.name}</option>`).join('');
+    target.dispatchEvent(new Event('change'));
+  });
+  target.addEventListener('change', async ()=>{
+    const r = await fetch(`/api/context/assets?target_id=${target.value}`); const data = await r.json();
+    asset.innerHTML = data.map(x=>`<option value="${x.id}">${x.name}</option>`).join('');
+  });
+})();
+</script>

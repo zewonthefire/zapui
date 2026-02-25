@@ -1,0 +1,8 @@
+{% extends 'core/base.html' %}
+{% block content %}
+{% include 'targets/scans/_context_bar.html' %}
+<div class="card"><div class="card-body"><h5>Runs Dashboard</h5>
+<table class="table table-sm"><thead><tr><th>Run</th><th>Job</th><th>Target</th><th>Node</th><th>Status</th><th>Started</th><th>Duration</th><th>Risk</th><th>Findings</th></tr></thead>
+<tbody>{% for r in runs %}<tr><td><a href="/scans/runs/{{ r.id }}/">{{ r.id }}</a></td><td>{{ r.scan_job_id }}</td><td>{{ r.scan_job.target.name }}</td><td>{{ r.zap_node.name }}</td><td>{{ r.status }}</td><td>{{ r.started_at }}</td><td>{{ r.duration_ms }}</td><td>{% with s=r.risk_snapshots.first %}{% if s %}{{ s.risk_score }}{% else %}0{% endif %}{% endwith %}</td><td>{{ r.findings.count }}</td></tr>{% endfor %}</tbody></table>
+</div></div>
+{% endblock %}
