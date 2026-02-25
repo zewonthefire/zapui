@@ -1,0 +1,16 @@
+{% extends "administration/base.html" %}
+{% block admin_content %}
+<h2>User: {{ managed_user.email }}</h2>
+<form method="post">{% csrf_token %}
+  <label>Email <input type="email" name="email" value="{{ managed_user.email }}"></label><br>
+  <label>Active <input type="checkbox" name="is_active" {% if managed_user.is_active %}checked{% endif %}></label><br>
+  <label>Groups</label>
+  <select name="groups" multiple>
+    {% for g in groups %}
+      <option value="{{ g.id }}" {% if g in managed_user.groups.all %}selected{% endif %}>{{ g.name }}</option>
+    {% endfor %}
+  </select><br>
+  <label>New password <input type="password" name="new_password"></label><br>
+  <button>Save</button>
+</form>
+{% endblock %}

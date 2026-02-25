@@ -1,0 +1,29 @@
+{% extends "administration/base.html" %}
+{% block admin_content %}
+<h2>Audit events</h2>
+<form method="get">
+  <input type="date" name="start" value="{{ request.GET.start }}">
+  <input type="date" name="end" value="{{ request.GET.end }}">
+  <select name="actor"><option value="">All actors</option>{% for a in actors %}<option value="{{ a.id }}">{{ a.email }}</option>{% endfor %}</select>
+  <input name="action" placeholder="action" value="{{ request.GET.action }}">
+  <input name="status" placeholder="status" value="{{ request.GET.status }}">
+  <input name="object_type" placeholder="object_type" value="{{ request.GET.object_type }}">
+  <input name="q" placeholder="Search message/object" value="{{ request.GET.q }}">
+  <button>Filter</button>
+</form>
+<p><a href="{% url 'administration:audit-export' %}">Export CSV</a></p>
+<table>
+  <tr><th>At</th><th>Actor</th><th>Action</th><th>Status</th><th>Object</th><th>Message</th></tr>
+  {% for e in page_obj %}
+  <tr>
+    <td>{{ e.created_at }}</td>
+    <td>{% if e.actor %}{{ e.actor.email }}{% else %}system{% endif %}</td>
+    <td>{{ e.action }}</td>
+    <td>{{ e.status }}</td>
+    <td>{{ e.object_type }} {{ e.object_id }}</td>
+    <td>{{ e.message }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% include "administration/_pagination.html" with page_obj=page_obj %}
+{% endblock %}

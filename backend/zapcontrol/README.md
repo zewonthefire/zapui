@@ -493,3 +493,65 @@ DJANGO_DB_ENGINE=sqlite python manage.py ingest_zap_json \
 - `/api/context/nodes`
 - `/api/context/profiles?project_id=`
 - `/api/context/scans?target_id=&range=`
+
+---
+
+## 21) Administration module (Users/Groups, ZAP Nodes/Pools, Settings, Audit)
+
+### Install / migrate / run
+
+```bash
+cd backend/zapcontrol
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+DJANGO_DB_ENGINE=sqlite python manage.py migrate
+DJANGO_DB_ENGINE=sqlite python manage.py createsuperuser
+DJANGO_DB_ENGINE=sqlite python manage.py bootstrap_admin_roles
+DJANGO_DB_ENGINE=sqlite python manage.py runserver
+```
+
+### Administration URLs
+
+- UI namespace: `/administration/`
+  - `/administration/users/`
+  - `/administration/groups/`
+  - `/administration/nodes/`
+  - `/administration/pools/`
+  - `/administration/settings/`
+  - `/administration/audit/`
+- API namespace: `/api/admin/`
+  - `users`, `groups`, `nodes`, `pools`, `settings`, `audit`
+
+### Bootstrap and assign baseline groups
+
+```bash
+DJANGO_DB_ENGINE=sqlite python manage.py bootstrap_admin_roles
+DJANGO_DB_ENGINE=sqlite python manage.py shell -c "from django.contrib.auth import get_user_model; from django.contrib.auth.models import Group; u=get_user_model().objects.get(email='admin@example.com'); u.groups.add(Group.objects.get(name='system_admin'))"
+```
+
+Baseline groups:
+
+- `system_admin` (full Administration access)
+- `scan_admin` (nodes/pools + audit)
+- `audit_viewer` (read-only audit)
+
+### Add a ZapNode and run healthcheck
+
+1. Open `/administration/nodes/` and create node with base URL + API key.
+2. Use **Test connection** action (or API: `POST /api/admin/nodes/<id>/healthcheck/`).
+3. Verify `health_status`, `last_seen_at`, and audit record in `/administration/audit/`.
+
+### Retention settings and purge command
+
+- Edit retention knobs in `/administration/settings/`:
+  - `retention_days_raw_results`
+  - `retention_days_findings`
+  - `retention_days_audit`
+- Execute purge manually:
+
+```bash
+DJANGO_DB_ENGINE=sqlite python manage.py purge_retention
+```
+
+This deletes old `AuditEvent`, `RawZapResult`, and `Report` rows based on configured retention, and writes a system audit event (`action=purge_retention`).
