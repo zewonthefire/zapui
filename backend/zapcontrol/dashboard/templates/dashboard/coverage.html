@@ -1,0 +1,9 @@
+{% extends 'dashboard/page_base.html' %}
+{% block dashboard_content %}
+<div class="row g-3">
+  <div class="col-md-4"><div class="card"><div class="card-header">Assets not scanned in 30d</div><div class="card-body"><ul>{% for item in data.not_scanned.d30 %}<li>{{ item.name }}</li>{% empty %}<li>None</li>{% endfor %}</ul></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-header">Assets not scanned in 60d</div><div class="card-body"><ul>{% for item in data.not_scanned.d60 %}<li>{{ item.name }}</li>{% empty %}<li>None</li>{% endfor %}</ul></div></div></div>
+  <div class="col-md-4"><div class="card"><div class="card-header">Assets not scanned in 90d</div><div class="card-body"><ul>{% for item in data.not_scanned.d90 %}<li>{{ item.name }}</li>{% empty %}<li>None</li>{% endfor %}</ul></div></div></div>
+</div>
+<div class="card mt-3"><div class="card-header">Node success rates</div><div class="card-body"><ul>{% for row in data.node_success_rates %}<li>{{ row.zap_node__name|default:'N/A' }} — {{ row.success_rate }}%</li>{% empty %}<li>No scans</li>{% endfor %}</ul></div></div>
+{% endblock %}

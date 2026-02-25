@@ -1,0 +1,21 @@
+{% extends 'dashboard/page_base.html' %}
+{% block dashboard_content %}
+<div class="card mb-3">
+  <div class="card-header">Risk table</div>
+  <div class="table-responsive">
+    <table class="table mb-0">
+      <thead><tr><th>Project</th><th>Target/Asset</th><th>Current risk</th><th>Delta</th></tr></thead>
+      <tbody>
+      {% for row in data.rows %}
+      <tr>
+        <td>{{ row.project__name }}</td>
+        <td><a href="/targets/{{ row.id }}">{{ row.name }}</a></td>
+        <td>{{ row.current_risk|default:'0' }}</td>
+        <td>{{ row.delta }}</td>
+      </tr>
+      {% empty %}<tr><td colspan="4">No risk data.</td></tr>{% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
