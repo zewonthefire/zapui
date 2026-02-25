@@ -248,8 +248,14 @@ class Finding(models.Model):
     instances_count = models.PositiveIntegerField(default=0)
 
     class Meta:
-        unique_together = ('scan_job', 'fingerprint')
         ordering = ('-last_seen',)
+        constraints = [
+            models.UniqueConstraint(
+                fields=['scan_job', 'fingerprint'],
+                condition=~models.Q(fingerprint='') & models.Q(scan_job__isnull=False),
+                name='targets_finding_scan_job_fingerprint_nonempty_uniq',
+            )
+        ]
         indexes = [
             models.Index(fields=['asset', '-last_seen']),
             models.Index(fields=['scan_job']),
