@@ -1,5 +1,6 @@
 import hashlib
 import json
+import re
 from collections import Counter
 from decimal import Decimal
 
@@ -95,11 +96,30 @@ def _extract_asset_key(alert: dict) -> tuple[str, str]:
     return ('unknown-asset', Asset.TYPE_APP)
 
 
-def normalize_alerts_to_findings(scan_job: ScanJob, alerts: list[dict]) -> None:
+def _target_allows_alert(target, alert: dict) -> bool:
+    url = str(alert.get("url") or "")
+    if target.include_regex:
+        try:
+            if not re.search(target.include_regex, url):
+                return False
+        except re.error:
+            pass
+    if target.exclude_regex:
+        try:
+            if re.search(target.exclude_regex, url):
+                return False
+        except re.error:
+            pass
+    return True
+
+
+def normalize_alerts_to_findings(scan_job: ScanJob, alerts: list[dict], scan_run=None) -> None:
     now = timezone.now()
     touched_asset_ids = set()
 
     for alert in alerts:
+        if not _target_allows_alert(scan_job.target, alert):
+            continue
         asset_name, asset_type = _extract_asset_key(alert)
         asset, _ = Asset.objects.get_or_create(
             target=scan_job.target,
@@ -117,6 +137,7 @@ def normalize_alerts_to_findings(scan_job: ScanJob, alerts: list[dict]) -> None:
             fingerprint=fingerprint,
             defaults={
                 'scan_job': scan_job,
+                'scan_run': scan_run,
                 'severity': normalize_severity(alert.get('risk')),
                 'confidence': str(alert.get('confidence') or 'Medium'),
                 'description': alert.get('description', '') or '',
@@ -137,6 +158,7 @@ def normalize_alerts_to_findings(scan_job: ScanJob, alerts: list[dict]) -> None:
 
         if not created:
             finding.scan_job = scan_job
+            finding.scan_run = scan_run
             finding.asset = asset
             finding.severity = normalize_severity(alert.get('risk'))
             finding.confidence = str(alert.get('confidence') or finding.confidence)
@@ -146,11 +168,12 @@ def normalize_alerts_to_findings(scan_job: ScanJob, alerts: list[dict]) -> None:
                 'instance': alert.get('instance'),
                 'pluginId': alert.get('pluginId'),
             }
-            finding.save(update_fields=['scan_job', 'asset', 'severity', 'confidence', 'last_seen', 'raw_result_ref'])
+            finding.save(update_fields=['scan_job', 'scan_run', 'asset', 'severity', 'confidence', 'last_seen', 'raw_result_ref'])
 
         instance, _ = FindingInstance.objects.get_or_create(
             finding=finding,
             scan_job=scan_job,
+            scan_run=scan_run,
             url=alert.get('url', '') or '',
             parameter=alert.get('param', '') or '',
             evidence=alert.get('evidence', '') or '',
@@ -181,7 +204,7 @@ def _refresh_asset_aggregates(asset: Asset, scan_job: ScanJob) -> None:
     )
 
 
-def create_risk_snapshots(scan_job: ScanJob):
+def create_risk_snapshots(scan_job: ScanJob, scan_run=None):
     # Asset-level snapshots
     for asset in Asset.objects.filter(target=scan_job.target):
         findings = asset.findings.filter(status=Finding.STATUS_OPEN)
@@ -190,6 +213,7 @@ def create_risk_snapshots(scan_job: ScanJob):
             asset=asset,
             target=scan_job.target,
             scan_job=scan_job,
+            scan_run=scan_run,
             risk_score=score,
             counts_by_severity=counts,
             breakdown={'weights': get_risk_weights()},

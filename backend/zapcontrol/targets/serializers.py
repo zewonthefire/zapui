@@ -1,45 +1,14 @@
 from rest_framework import serializers
 
-from .models import Asset, Finding, RawZapResult, ScanComparison, ScanComparisonItem, ScanJob
-
-
-class AssetSerializer(serializers.ModelSerializer):
-    project_name = serializers.CharField(source='target.project.name', read_only=True)
-    target_name = serializers.CharField(source='target.name', read_only=True)
-
-    class Meta:
-        model = Asset
-        fields = [
-            'id',
-            'name',
-            'asset_type',
-            'uri',
-            'project_name',
-            'target_name',
-            'scan_count',
-            'last_scanned_at',
-            'last_scan_status',
-            'current_risk_score',
-            'findings_open_count_by_sev',
-        ]
+from .models import Finding, RawZapResult, Report, ScanJob, ScanRun
 
 
 class FindingSerializer(serializers.ModelSerializer):
-    scan_job_id = serializers.IntegerField(source='scan_job.id', read_only=True)
-
     class Meta:
         model = Finding
         fields = [
-            'id',
-            'title',
-            'severity',
-            'confidence',
-            'status',
-            'fingerprint',
-            'first_seen',
-            'last_seen',
-            'raw_result_ref',
-            'scan_job_id',
+            'id', 'title', 'severity', 'confidence', 'status', 'fingerprint',
+            'first_seen', 'last_seen', 'raw_result_ref',
         ]
 
 
@@ -48,30 +17,65 @@ class ScanJobSerializer(serializers.ModelSerializer):
     target_name = serializers.CharField(source='target.name', read_only=True)
     profile_name = serializers.CharField(source='profile.name', read_only=True)
     node_name = serializers.CharField(source='zap_node.name', read_only=True)
+    last_run_status = serializers.SerializerMethodField()
+    last_run_time = serializers.SerializerMethodField()
 
     class Meta:
         model = ScanJob
         fields = [
-            'id', 'project_name', 'target_name', 'profile_name', 'node_name',
-            'status', 'created_at', 'started_at', 'completed_at', 'duration_seconds'
+            'id', 'project', 'target', 'profile', 'project_name', 'target_name', 'profile_name', 'node_name',
+            'node_strategy', 'schedule_type', 'enabled', 'created_at', 'last_run_status', 'last_run_time'
         ]
+
+    def get_last_run_status(self, obj):
+        run = obj.runs.order_by('-created_at').first()
+        return run.status if run else None
+
+    def get_last_run_time(self, obj):
+        run = obj.runs.order_by('-created_at').first()
+        return run.created_at if run else None
+
+
+class ScanRunSerializer(serializers.ModelSerializer):
+    job_id = serializers.IntegerField(source='scan_job.id', read_only=True)
+    project_name = serializers.CharField(source='scan_job.project.name', read_only=True)
+    target_name = serializers.CharField(source='scan_job.target.name', read_only=True)
+    profile_name = serializers.CharField(source='scan_job.profile.name', read_only=True)
+    node_name = serializers.CharField(source='zap_node.name', read_only=True)
+    findings_high = serializers.SerializerMethodField()
+    findings_medium = serializers.SerializerMethodField()
+    findings_low = serializers.SerializerMethodField()
+    risk_score = serializers.SerializerMethodField()
+
+    class Meta:
+        model = ScanRun
+        fields = [
+            'id', 'job_id', 'project_name', 'target_name', 'profile_name', 'node_name', 'status',
+            'started_at', 'finished_at', 'duration_ms', 'spider_progress', 'ascan_progress',
+            'error_message', 'logs', 'findings_high', 'findings_medium', 'findings_low', 'risk_score'
+        ]
+
+    def get_findings_high(self, obj):
+        return obj.findings.filter(severity='High').count()
+
+    def get_findings_medium(self, obj):
+        return obj.findings.filter(severity='Medium').count()
+
+    def get_findings_low(self, obj):
+        return obj.findings.filter(severity='Low').count()
+
+    def get_risk_score(self, obj):
+        snap = obj.risk_snapshots.order_by('-created_at').first()
+        return str(snap.risk_score) if snap else '0'
 
 
 class RawZapResultSerializer(serializers.ModelSerializer):
     class Meta:
         model = RawZapResult
-        fields = ['id', 'scan_job', 'metadata', 'size_bytes', 'checksum', 'payload', 'fetched_at']
+        fields = ['id', 'scan_job', 'scan_run', 'metadata', 'size_bytes', 'checksum', 'payload', 'fetched_at']
 
 
-class ScanComparisonItemSerializer(serializers.ModelSerializer):
+class ReportSerializer(serializers.ModelSerializer):
     class Meta:
-        model = ScanComparisonItem
-        fields = ['finding_fingerprint', 'change_type', 'before', 'after']
-
-
-class ScanComparisonSerializer(serializers.ModelSerializer):
-    items = ScanComparisonItemSerializer(many=True, read_only=True)
-
-    class Meta:
-        model = ScanComparison
-        fields = ['id', 'target', 'asset', 'scan_a', 'scan_b', 'scope', 'summary', 'risk_delta', 'created_at', 'items']
+        model = Report
+        fields = ['id', 'scan_run', 'scan_job', 'html_file', 'json_file', 'pdf_file', 'created_at']

@@ -1,0 +1,8 @@
+{% extends 'core/base.html' %}
+{% block content %}
+{% include 'targets/scans/_context_bar.html' %}
+<div class="row">
+<div class="col-md-4"><div class="card"><div class="card-body"><h5>Create Job</h5><form method="post">{% csrf_token %}{{ form.as_p }}<button class="btn btn-primary">Save</button></form></div></div></div>
+<div class="col-md-8"><div class="card"><div class="card-body"><h5>Jobs</h5><table class="table table-sm"><thead><tr><th>ID</th><th>Project</th><th>Target</th><th>Profile</th><th>Strategy</th><th>Schedule</th><th>Enabled</th><th>Last run</th><th></th></tr></thead><tbody>{% for j in jobs %}<tr><td>{{ j.id }}</td><td>{{ j.project }}</td><td>{{ j.target.name }}</td><td>{{ j.profile.name }}</td><td>{{ j.node_strategy }}</td><td>{{ j.schedule_type }}</td><td>{{ j.enabled }}</td><td>{% with lr=j.runs.first %}{% if lr %}{{ lr.status }} @ {{ lr.created_at }}{% else %}-{% endif %}{% endwith %}</td><td><form method="post">{% csrf_token %}<button name="run_now" value="{{ j.id }}" class="btn btn-sm btn-success">Run now</button><button name="toggle" value="{{ j.id }}" class="btn btn-sm btn-outline-secondary">Enable/Disable</button></form></td></tr>{% endfor %}</tbody></table></div></div></div>
+</div>
+{% endblock %}

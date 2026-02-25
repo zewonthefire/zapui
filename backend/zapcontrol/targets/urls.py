@@ -3,20 +3,17 @@ from django.urls import path
 from . import api_views, assets_views, views
 
 urlpatterns = [
-    path('profiles', views.profiles, name='profiles'),
-    path('scans', views.scans, name='scans'),
-    path('scans/<int:scan_id>', views.scan_detail, name='scan-detail'),
-    path('scans/<int:scan_id>/report/<str:report_format>', views.report_download, name='report-download'),
-    path('reports', views.reports_list, name='reports-list'),
-    path('projects/<int:project_id>', views.project_detail, name='project-detail'),
-    path('targets/<int:target_id>', views.target_detail, name='target-detail'),
-    path('targets/<int:target_id>/evolution', views.target_evolution, name='target-evolution'),
-    path('targets/<int:target_id>/evolution/<int:comparison_id>', views.target_diff_detail, name='target-diff-detail'),
+    path('scans/context-bar/', views.scans_context_bar, name='scans-context-bar'),
+    path('scans/config/projects/', views.scans_projects, name='scans-config-projects'),
+    path('scans/config/targets/', views.scans_targets, name='scans-config-targets'),
+    path('scans/config/profiles/', views.scans_profiles, name='scans-config-profiles'),
+    path('scans/jobs/', views.scans_jobs, name='scans-jobs'),
+    path('scans/runs/', views.scans_runs, name='scans-runs'),
+    path('scans/runs/<int:id>/', views.scans_run_detail, name='scans-run-detail'),
+    path('scans/runs/<int:id>/report/<str:report_format>/', views.scan_report_download, name='scans-run-report-download'),
+    path('scans/reports/', views.scans_reports, name='scans-reports'),
 
     path('assets/', assets_views.assets_inventory, name='assets-inventory'),
-    path('assets/<int:asset_id>/', assets_views.asset_detail, name='asset-detail'),
-    path('assets/raw/', assets_views.raw_results_page, name='assets-raw-results'),
-    path('assets/comparisons/', assets_views.comparisons_page, name='assets-comparisons'),
 
     path('api/context/projects', api_views.ContextProjectsApi.as_view()),
     path('api/context/targets', api_views.ContextTargetsApi.as_view()),
@@ -25,9 +22,11 @@ urlpatterns = [
     path('api/context/profiles', api_views.ContextProfilesApi.as_view()),
     path('api/context/scans', api_views.ContextScansApi.as_view()),
 
-    path('api/assets', api_views.AssetListApi.as_view()),
-    path('api/assets/<int:asset_id>/findings', api_views.AssetFindingsApi.as_view()),
-    path('api/scans', api_views.ScanListApi.as_view()),
-    path('api/raw-results', api_views.RawResultsApi.as_view()),
-    path('api/comparisons', api_views.ComparisonsApi.as_view()),
+    path('api/scans/jobs', api_views.JobsApi.as_view()),
+    path('api/scans/runs', api_views.RunsApi.as_view()),
+    path('api/scans/runs/<int:pk>', api_views.RunDetailApi.as_view()),
+    path('api/scans/runs/<int:id>/findings', api_views.RunFindingsApi.as_view()),
+    path('api/scans/runs/<int:id>/raw', api_views.RunRawApi.as_view()),
+    path('api/scans/runs/<int:id>/report', api_views.RunReportApi.as_view()),
+    path('api/scans/enqueue', api_views.EnqueueApi.as_view()),
 ]

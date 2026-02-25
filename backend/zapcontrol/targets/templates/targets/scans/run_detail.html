@@ -1,0 +1,20 @@
+{% extends 'core/base.html' %}
+{% block content %}
+{% include 'targets/scans/_context_bar.html' %}
+<h3>Run #{{ run.id }}</h3>
+<ul class="nav nav-tabs mb-3">
+  <li class="nav-item"><a class="nav-link {% if tab == 'summary' %}active{% endif %}" href="?tab=summary">Summary</a></li>
+  <li class="nav-item"><a class="nav-link {% if tab == 'findings' %}active{% endif %}" href="?tab=findings">Findings</a></li>
+  <li class="nav-item"><a class="nav-link {% if tab == 'raw' %}active{% endif %}" href="?tab=raw">Raw results</a></li>
+  <li class="nav-item"><a class="nav-link {% if tab == 'report' %}active{% endif %}" href="?tab=report">Report</a></li>
+</ul>
+{% if tab == 'summary' %}
+<div class="card"><div class="card-body"><p>Status: {{ run.status }}</p><p>Timings: {{ run.started_at }} - {{ run.finished_at }}</p><p>Node: {{ run.zap_node }}</p><p>Profile: {{ run.scan_job.profile }}</p><p>Risk score: {% with s=run.risk_snapshots.first %}{% if s %}{{ s.risk_score }}{% else %}0{% endif %}{% endwith %}</p></div></div>
+{% elif tab == 'findings' %}
+<table class="table table-sm"><thead><tr><th>Severity</th><th>Title</th><th>Fingerprint</th></tr></thead><tbody>{% for f in findings %}<tr><td>{{ f.severity }}</td><td>{{ f.title }}</td><td>{{ f.fingerprint }}</td></tr>{% endfor %}</tbody></table>
+{% elif tab == 'raw' %}
+<pre style="max-height:600px;overflow:auto">{{ raw_json }}</pre>
+{% else %}
+{% if report %}<a class="btn btn-primary" href="/scans/runs/{{ run.id }}/report/html/">Download HTML report</a>{% else %}<p>No report available yet.</p>{% endif %}
+{% endif %}
+{% endblock %}

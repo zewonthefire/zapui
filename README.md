@@ -332,3 +332,38 @@ sequenceDiagram
   CEL->>DB: Persist results/findings/risk
   CEL->>DB: Generate reports
 ```
+
+## 12) Scans module quickstart
+
+1. Run migrations and create an admin user:
+```bash
+cd backend/zapcontrol
+python manage.py migrate
+python manage.py createsuperuser
+```
+2. Start web UI:
+```bash
+python manage.py runserver 0.0.0.0:8000
+```
+3. Create `ZapNode`, `ScanProfile`, and `ScanJob` in the Scans UI (`/scans/config/*`, `/scans/jobs/`).
+4. Trigger scans:
+```bash
+python manage.py submit_scan --scan_job_id=<id>
+python manage.py scan_worker --once
+```
+5. Schedule loop (cron every minute):
+```bash
+* * * * * cd /workspace/zapui/backend/zapcontrol && python manage.py schedule_scans
+* * * * * cd /workspace/zapui/backend/zapcontrol && python manage.py scan_worker --once
+* * * * * cd /workspace/zapui/backend/zapcontrol && python manage.py nodes_healthcheck
+```
+
+APIs:
+- `/api/scans/jobs`
+- `/api/scans/runs`
+- `/api/scans/runs/<id>`
+- `/api/scans/runs/<id>/findings`
+- `/api/scans/runs/<id>/raw`
+- `/api/scans/runs/<id>/report`
+- `/api/scans/enqueue`
+- `/api/context/projects|targets|assets|nodes|profiles|scans`
